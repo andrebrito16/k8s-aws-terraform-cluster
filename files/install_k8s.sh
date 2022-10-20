@@ -82,10 +82,10 @@ wait_for_ca_secret(){
   done
 
   res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
-  while [[ -z "$res_cert" || "$res_cert" == "${default_secret_placeholder}" ]]
+  while [[ -z "$res_token" || "$res_token" == "${default_secret_placeholder}" ]]
   do
     echo "Waiting the ca hash ..."
-    res_cert=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
+    res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
     sleep 1
   done
 }
@@ -241,7 +241,9 @@ k8s_init(){
 }
 
 setup_cni(){
-  kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+  until kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml; do
+    echo "Trying to install CNI flannel"
+  done
 }
 
 first_instance=$(aws ec2 describe-instances --filters Name=tag-value,Values=k8s-server Name=instance-state-name,Values=running --query 'sort_by(Reservations[].Instances[], &LaunchTime)[:-1].[InstanceId]' --output text | head -n1)
