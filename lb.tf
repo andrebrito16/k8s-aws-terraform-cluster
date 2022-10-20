@@ -1,5 +1,5 @@
 resource "aws_lb" "external_lb" {
-  count              = var.install_nginx_ingress ? 1 : 0
+  count              = var.create_extlb ? 1 : 0
   name               = "${var.common_prefix}-ext-lb-${var.environment}"
   load_balancer_type = "network"
   internal           = "false"
@@ -17,7 +17,7 @@ resource "aws_lb" "external_lb" {
 
 # HTTP
 resource "aws_lb_listener" "external_lb_listener_http" {
-  count             = var.install_nginx_ingress ? 1 : 0
+  count             = var.create_extlb ? 1 : 0
   load_balancer_arn = aws_lb.external_lb[count.index].arn
 
   protocol = "TCP"
@@ -37,7 +37,7 @@ resource "aws_lb_listener" "external_lb_listener_http" {
 }
 
 resource "aws_lb_target_group" "external_lb_tg_http" {
-  count             = var.install_nginx_ingress ? 1 : 0
+  count             = var.create_extlb ? 1 : 0
   port              = var.extlb_listener_http_port
   protocol          = "TCP"
   vpc_id            = var.vpc_id
@@ -64,7 +64,7 @@ resource "aws_lb_target_group" "external_lb_tg_http" {
 }
 
 resource "aws_autoscaling_attachment" "target_http" {
-  count = var.install_nginx_ingress ? 1 : 0
+  count = var.create_extlb ? 1 : 0
   depends_on = [
     aws_autoscaling_group.k8s_workers_asg,
     aws_lb_target_group.external_lb_tg_http
@@ -76,7 +76,7 @@ resource "aws_autoscaling_attachment" "target_http" {
 
 # HTTPS
 resource "aws_lb_listener" "external_lb_listener_https" {
-  count             = var.install_nginx_ingress ? 1 : 0
+  count             = var.create_extlb ? 1 : 0
   load_balancer_arn = aws_lb.external_lb[count.index].arn
 
   protocol = "TCP"
@@ -96,7 +96,7 @@ resource "aws_lb_listener" "external_lb_listener_https" {
 }
 
 resource "aws_lb_target_group" "external_lb_tg_https" {
-  count             = var.install_nginx_ingress ? 1 : 0
+  count             = var.create_extlb ? 1 : 0
   port              = var.extlb_listener_https_port
   protocol          = "TCP"
   vpc_id            = var.vpc_id
@@ -123,7 +123,7 @@ resource "aws_lb_target_group" "external_lb_tg_https" {
 }
 
 resource "aws_autoscaling_attachment" "target_https" {
-  count = var.install_nginx_ingress ? 1 : 0
+  count = var.create_extlb ? 1 : 0
   depends_on = [
     aws_autoscaling_group.k8s_workers_asg,
     aws_lb_target_group.external_lb_tg_https
