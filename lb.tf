@@ -1,52 +1,50 @@
-resource "aws_lb" "external-lb" {
+resource "aws_lb" "external_lb" {
   count              = var.install_nginx_ingress ? 1 : 0
-  name               = var.k8s_ext_lb_name
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.k8s-public-lb[count.index].id]
+  name               = "${var.common_prefix}-ext-lb-${var.environment}"
+  load_balancer_type = "network"
   internal           = "false"
   subnets            = var.vpc_public_subnets
 
   enable_cross_zone_load_balancing = true
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "${var.k8s_ext_lb_name}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-ext-lb-${var.environment}")
     }
   )
-
 }
 
 # HTTP
-resource "aws_lb_listener" "external-lb-listener-http" {
+resource "aws_lb_listener" "external_lb_listener_http" {
   count             = var.install_nginx_ingress ? 1 : 0
-  load_balancer_arn = aws_lb.external-lb[count.index].arn
+  load_balancer_arn = aws_lb.external_lb[count.index].arn
 
   protocol = "HTTP"
   port     = var.extlb_http_port
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.external-lb-tg-http[count.index].arn
+    target_group_arn = aws_lb_target_group.external_lb_tg_http[count.index].arn
   }
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "lb-http-listener-${var.k8s_ext_lb_name}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-http-listener-${var.environment}")
     }
   )
 }
 
-resource "aws_lb_target_group" "external-lb-tg-http" {
-  count    = var.install_nginx_ingress ? 1 : 0
-  port     = var.extlb_listener_http_port
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
-
+resource "aws_lb_target_group" "external_lb_tg_http" {
+  count             = var.install_nginx_ingress ? 1 : 0
+  port              = var.extlb_listener_http_port
+  protocol          = "HTTP"
+  vpc_id            = var.vpc_id
+  proxy_protocol_v2 = true
 
   depends_on = [
-    aws_lb.external-lb
+    aws_lb.external_lb
   ]
 
   health_check {
@@ -59,55 +57,54 @@ resource "aws_lb_target_group" "external-lb-tg-http" {
   }
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "lb-http-tg-${var.k8s_ext_lb_name}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-ext-lb-tg-http-${var.environment}")
     }
   )
 }
 
-resource "aws_autoscaling_attachment" "target-http" {
+resource "aws_autoscaling_attachment" "target_http" {
   count = var.install_nginx_ingress ? 1 : 0
   depends_on = [
     aws_autoscaling_group.k8s_workers_asg,
-    aws_lb_target_group.external-lb-tg-http
+    aws_lb_target_group.external_lb_tg_http
   ]
 
   autoscaling_group_name = aws_autoscaling_group.k8s_workers_asg.name
-  lb_target_group_arn    = aws_lb_target_group.external-lb-tg-http[count.index].arn
+  lb_target_group_arn    = aws_lb_target_group.external_lb_tg_http[count.index].arn
 }
 
 # HTTPS
-resource "aws_lb_listener" "external-lb-listener-https" {
+resource "aws_lb_listener" "external_lb_listener_https" {
   count             = var.install_nginx_ingress ? 1 : 0
-  load_balancer_arn = aws_lb.external-lb[count.index].arn
+  load_balancer_arn = aws_lb.external_lb[count.index].arn
 
-  protocol        = "HTTPS"
-  port            = var.extlb_https_port
-  certificate_arn = aws_acm_certificate.cert[count.index].arn
+  protocol = "HTTPS"
+  port     = var.extlb_https_port
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.external-lb-tg-https[count.index].arn
+    target_group_arn = aws_lb_target_group.external_lb_tg_https[count.index].arn
   }
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "lb-https-listener-${var.k8s_ext_lb_name}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-https-listener-${var.environment}")
     }
   )
 }
 
-resource "aws_lb_target_group" "external-lb-tg-https" {
-  count    = var.install_nginx_ingress ? 1 : 0
-  port     = var.extlb_listener_https_port
-  protocol = "HTTPS"
-  vpc_id   = var.vpc_id
-
+resource "aws_lb_target_group" "external_lb_tg_https" {
+  count             = var.install_nginx_ingress ? 1 : 0
+  port              = var.extlb_listener_https_port
+  protocol          = "HTTPS"
+  vpc_id            = var.vpc_id
+  proxy_protocol_v2 = true
 
   depends_on = [
-    aws_lb.external-lb
+    aws_lb.external_lb
   ]
 
   health_check {
@@ -120,20 +117,20 @@ resource "aws_lb_target_group" "external-lb-tg-https" {
   }
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "lb-https-tg-${var.k8s_ext_lb_name}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-ext-lb-tg-https-${var.environment}")
     }
   )
 }
 
-resource "aws_autoscaling_attachment" "target-https" {
+resource "aws_autoscaling_attachment" "target_https" {
   count = var.install_nginx_ingress ? 1 : 0
   depends_on = [
     aws_autoscaling_group.k8s_workers_asg,
-    aws_lb_target_group.external-lb-tg-https
+    aws_lb_target_group.external_lb_tg_https
   ]
 
   autoscaling_group_name = aws_autoscaling_group.k8s_workers_asg.name
-  lb_target_group_arn    = aws_lb_target_group.external-lb-tg-https[count.index].arn
+  lb_target_group_arn    = aws_lb_target_group.external_lb_tg_https[count.index].arn
 }

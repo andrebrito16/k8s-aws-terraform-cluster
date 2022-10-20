@@ -1,5 +1,14 @@
+resource "random_password" "k8s_token" {
+  length  = 55
+  special = false
+}
+
 data "aws_iam_policy" "AmazonEC2ReadOnlyAccess" {
   arn = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+}
+
+data "aws_iam_policy" "AmazonSSMManagedInstanceCore" {
+  arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 data "template_cloudinit_config" "k8s_server" {
@@ -14,7 +23,9 @@ data "template_cloudinit_config" "k8s_server" {
 
   part {
     content_type = "text/x-shellscript"
-    content      = templatefile("${path.module}/files/install_k8s_utils.sh", { k8s_version = var.k8s_version, install_longhorn = var.install_longhorn, })
+    content = templatefile("${path.module}/files/install_k8s_utils.sh", {
+      k8s_version = var.k8s_version
+    })
   }
 
   part {
@@ -25,12 +36,13 @@ data "template_cloudinit_config" "k8s_server" {
       k8s_dns_domain            = var.k8s_dns_domain,
       k8s_pod_subnet            = var.k8s_pod_subnet,
       k8s_service_subnet        = var.k8s_service_subnet,
-      s3_bucket_name            = var.s3_bucket_name,
+      kubeadm_ca_secret_name    = local.kubeadm_ca_secret_name,
+      kubeadm_token_secret_name = local.kubeadm_token_secret_name,
+      kubeadm_cert_secret_name  = local.kubeadm_cert_secret_name,
       kube_api_port             = var.kube_api_port,
-      control_plane_url         = aws_lb.k8s-server-lb.dns_name,
-      install_longhorn          = var.install_longhorn,
-      longhorn_release          = var.longhorn_release,
+      control_plane_url         = aws_lb.k8s_server_lb.dns_name,
       install_nginx_ingress     = var.install_nginx_ingress,
+      nginx_ingress_release     = var.nginx_ingress_release,
       extlb_listener_http_port  = var.extlb_listener_http_port,
       extlb_listener_https_port = var.extlb_listener_https_port,
     })
@@ -49,16 +61,20 @@ data "template_cloudinit_config" "k8s_worker" {
 
   part {
     content_type = "text/x-shellscript"
-    content      = templatefile("${path.module}/files/install_k8s_utils.sh", { k8s_version = var.k8s_version, install_longhorn = var.install_longhorn })
+    content = templatefile("${path.module}/files/install_k8s_utils.sh", {
+      k8s_version = var.k8s_version
+    })
   }
 
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/install_k8s_worker.sh", {
-      is_k8s_server     = false,
-      s3_bucket_name    = var.s3_bucket_name,
-      kube_api_port     = var.kube_api_port,
-      control_plane_url = aws_lb.k8s-server-lb.dns_name,
+      is_k8s_server             = false,
+      kubeadm_ca_secret_name    = local.kubeadm_ca_secret_name,
+      kubeadm_token_secret_name = local.kubeadm_token_secret_name,
+      kubeadm_cert_secret_name  = local.kubeadm_cert_secret_name,
+      kube_api_port             = var.kube_api_port,
+      control_plane_url         = aws_lb.k8s_server_lb.dns_name,
     })
   }
 }
@@ -70,11 +86,7 @@ data "aws_instances" "k8s_servers" {
   ]
 
   instance_tags = {
-    k8s-instance-type = "k8s-server"
-    provisioner       = "terraform"
-    environment       = var.environment
-    uuid              = var.uuid
-    scope             = "k8s-cluster"
+    for tag, value in merge(local.global_tags, {k8s-instance-type = "k8s-server"}) : tag => value
   }
 
   instance_state_names = ["running"]
@@ -87,11 +99,7 @@ data "aws_instances" "k8s_workers" {
   ]
 
   instance_tags = {
-    k8s-instance-type = "k8s-worker"
-    provisioner       = "terraform"
-    environment       = var.environment
-    uuid              = var.uuid
-    scope             = "k8s-cluster"
+    for tag, value in merge(local.global_tags, {k8s-instance-type = "k8s-worker"}) : tag => value
   }
 
   instance_state_names = ["running"]

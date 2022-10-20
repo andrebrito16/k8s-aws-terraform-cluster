@@ -3,7 +3,7 @@
 render_kubeinit(){
 
 HOSTNAME=$(hostname)
-ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
+ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | grep -Po '(?<=src )(\S+)')
 
 cat <<-EOF > /root/kubeadm-init-config.yaml
 ---
@@ -19,7 +19,7 @@ bootstrapTokens:
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: $ADVERTISE_ADDR
-  bindPort: ${kube_api_port }
+  bindPort: ${kube_api_port}
 nodeRegistration:
   criSocket: /run/containerd/containerd.sock
   imagePullPolicy: IfNotPresent
@@ -36,7 +36,7 @@ dns: {}
 imageRepository: k8s.gcr.io
 kind: ClusterConfiguration
 kubernetesVersion: ${k8s_version}
-controlPlaneEndpoint: ${control_plane_url}:${kube_api_port }
+controlPlaneEndpoint: ${control_plane_url}:${kube_api_port}
 networking:
   dnsDomain: ${k8s_dns_domain}
   podSubnet: ${k8s_pod_subnet}
@@ -52,11 +52,25 @@ cgroupDriver: systemd
 EOF
 }
 
-wait_for_s3_object(){
-  until aws s3 ls s3://${s3_bucket_name}/ca.txt 
+wait_lb() {
+while [ true ]
+do
+  curl --output /dev/null --silent -k https://${control_plane_url}:${kube_api_port}
+  if [[ "$?" -eq 0 ]]; then
+    break
+  fi
+  sleep 5
+  echo "wait for LB"
+done
+}
+
+wait_for_ca_secret(){
+  res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+  while [[ -z "$res" ]]
   do
-      echo "Waiting the ca hash ..."
-      sleep 10
+    echo "Waiting the ca hash ..."
+    res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
   done
 }
 
@@ -86,10 +100,10 @@ setup_env(){
 render_kubejoin(){
 
 HOSTNAME=$(hostname)
-ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
-CA_HASH=$(aws s3 cp s3://${s3_bucket_name}/ca.txt -)
-KUBEADM_CERT=$(aws s3 cp s3://${s3_bucket_name}/kubeadm_cert.txt -)
-KUBEADM_TOKEN=$(aws s3 cp s3://${s3_bucket_name}/kubeadm_token.txt -)
+ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | grep -Po '(?<=src )(\S+)')
+CA_HASH=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+KUBEADM_CERT=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_cert_secret_name} | jq -r .SecretString)
+KUBEADM_TOKEN=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
 
 cat <<-EOF > /root/kubeadm-join-master.yaml
 ---
@@ -155,21 +169,18 @@ spec:
 apiVersion: v1
 data:
   allow-snippet-annotations: "true"
-  use-forwarded-headers: "true"
-  compute-full-forwarded-for: "true"
   enable-real-ip: "true"
-  forwarded-for-header: "X-Forwarded-For"
   proxy-real-ip-cidr: "0.0.0.0/0"
+  proxy-body-size: "20m"
+  use-proxy-protocol: "true"
 kind: ConfigMap
 metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/instance: ingress-nginx
-    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/part-of: ingress-nginx
-    app.kubernetes.io/version: 1.1.1
-    helm.sh/chart: ingress-nginx-4.0.16
+    app.kubernetes.io/version: ${nginx_ingress_release}
   name: ingress-nginx-controller
   namespace: ingress-nginx
 EOF
@@ -181,7 +192,7 @@ k8s_join(){
   cp /etc/kubernetes/admin.conf ~/.kube/config
 }
 
-generate_s3_object(){
+generate_secrets(){
   HASH=$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //')
   echo $HASH > /tmp/ca.txt
 
@@ -191,9 +202,9 @@ generate_s3_object(){
   CERT=$(kubeadm init phase upload-certs --upload-certs | tail -n 1)
   echo $CERT > /tmp/kubeadm_cert.txt
 
-  aws s3 cp /tmp/ca.txt s3://${s3_bucket_name}/ca.txt
-  aws s3 cp /tmp/kubeadm_cert.txt s3://${s3_bucket_name}/kubeadm_cert.txt
-  aws s3 cp /tmp/kubeadm_token.txt s3://${s3_bucket_name}/kubeadm_token.txt
+  aws secretsmanager update-secret --secret-id ${kubeadm_ca_secret_name} --secret-string file:///tmp/ca.txt
+  aws secretsmanager update-secret --secret-id ${kubeadm_cert_secret_name} --secret-string file:///tmp/kubeadm_cert.txt
+  aws secretsmanager update-secret --secret-id ${kubeadm_token_secret_name} --secret-string file:///tmp/kubeadm_token.txt
 }
 
 k8s_init(){
@@ -208,29 +219,25 @@ setup_cni(){
 
 first_instance=$(aws ec2 describe-instances --filters Name=tag-value,Values=k8s-server Name=instance-state-name,Values=running --query 'sort_by(Reservations[].Instances[], &LaunchTime)[:-1].[InstanceId]' --output text | head -n1)
 instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-control_plane_status=$(curl -o /dev/null -L -k -s -w '%%{http_code}' https://${control_plane_url}:${kube_api_port})
 
-if [[ "$first_instance" == "$instance_id" ]] && [[ "$control_plane_status" -ne 403 ]]; then
+if [[ "$first_instance" == "$instance_id" ]]; then
   render_kubeinit
   k8s_init
   setup_env
   wait_for_pods
   setup_cni
-  generate_s3_object
+  generate_secrets
   echo "Wait 180 seconds for control-planes to join"
   sleep 180
   wait_for_masters
   %{ if install_nginx_ingress }
-  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${nginx_ingress_release}/deploy/static/provider/baremetal/deploy.yaml
   render_nginx_config
   kubectl apply -f /root/nginx-ingress-config.yaml
   %{ endif }
-  %{ if install_longhorn }
-  kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/${longhorn_release}/deploy/longhorn.yaml
-  kubectl create -f https://raw.githubusercontent.com/longhorn/longhorn/${longhorn_release}/examples/storageclass.yaml
-  %{ endif }
 else
-  wait_for_s3_object
+  wait_for_ca_secret
   render_kubejoin
+  wait_lb
   k8s_join
 fi

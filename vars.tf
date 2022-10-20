@@ -2,10 +2,6 @@ variable "environment" {
   type = string
 }
 
-variable "uuid" {
-  type = string
-}
-
 variable "ssk_key_pair_name" {
   type = string
 }
@@ -13,6 +9,11 @@ variable "ssk_key_pair_name" {
 variable "vpc_id" {
   type        = string
   description = "The vpc id"
+}
+
+variable "my_public_ip_cidr" {
+  type        = string
+  description = "My public ip CIDR"
 }
 
 variable "vpc_private_subnets" {
@@ -30,24 +31,15 @@ variable "vpc_subnet_cidr" {
   description = "VPC subnet CIDR"
 }
 
+variable "common_prefix" {
+  type        = string
+  description = ""
+  default     = "k8s"
+}
+
 variable "ec2_associate_public_ip_address" {
   type    = bool
   default = false
-}
-
-variable "s3_bucket_name" {
-  type    = string
-  default = "my-very-secure-k8s-bucket"
-}
-
-variable "instance_profile_name" {
-  type    = string
-  default = "K8sInstanceProfile"
-}
-
-variable "iam_role_name" {
-  type    = string
-  default = "K8sIamRole"
 }
 
 variable "ami" {
@@ -69,16 +61,6 @@ variable "instance_types" {
     asg_instance_type_3 = "m4.large"
     asg_instance_type_4 = "t3a.large"
   }
-}
-
-variable "k8s_master_template_prefix" {
-  type    = string
-  default = "k8s_master_tpl"
-}
-
-variable "k8s_worker_template_prefix" {
-  type    = string
-  default = "k8s_worker_tpl"
 }
 
 variable "k8s_version" {
@@ -105,11 +87,6 @@ variable "kube_api_port" {
   type        = number
   default     = 6443
   description = "Kubeapi Port"
-}
-
-variable "k8s_internal_lb_name" {
-  type    = string
-  default = "k8s-server-tcp-lb"
 }
 
 variable "k8s_server_desired_capacity" {
@@ -154,36 +131,21 @@ variable "cluster_name" {
   description = "Cluster name"
 }
 
-
-variable "PATH_TO_PUBLIC_LB_CERT" {
-  type        = string
-  description = "Path to the public LB https certificate"
-}
-
-variable "PATH_TO_PUBLIC_LB_KEY" {
-  type        = string
-  description = "Path to the public LB key"
-}
-
-variable "install_longhorn" {
-  type    = bool
-  default = false
-}
-
-variable "longhorn_release" {
-  type    = string
-  default = "v1.2.3"
-}
-
 variable "install_nginx_ingress" {
   type        = bool
   default     = false
   description = "Create external LB true/false"
 }
 
-variable "k8s_ext_lb_name" {
+variable "nginx_ingress_release" {
   type    = string
-  default = "k8s-ext-lb"
+  default = "v1.3.1"
+}
+
+variable "create_extlb" {
+  type        = bool
+  default     = false
+  description = "Create external LB true/false"
 }
 
 variable "extlb_listener_http_port" {

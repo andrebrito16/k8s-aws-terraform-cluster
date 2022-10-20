@@ -1,5 +1,5 @@
 resource "aws_launch_template" "k8s_server" {
-  name_prefix   = var.k8s_master_template_prefix
+  name_prefix   = "${var.common_prefix}-server-tpl-${var.environment}"
   image_id      = var.ami
   instance_type = var.default_instance_type
   user_data     = data.template_cloudinit_config.k8s_server.rendered
@@ -25,19 +25,19 @@ resource "aws_launch_template" "k8s_server" {
 
   network_interfaces {
     associate_public_ip_address = var.ec2_associate_public_ip_address
-    security_groups             = [aws_security_group.k8s-sg.id]
+    security_groups             = [aws_security_group.k8s_sg.id]
   }
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "template-${var.k8s_master_template_prefix}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-server-tpl-${var.environment}")
     }
   )
 }
 
 resource "aws_launch_template" "k8s_worker" {
-  name_prefix   = var.k8s_worker_template_prefix
+  name_prefix   = "${var.common_prefix}-worker-tpl-${var.environment}"
   image_id      = var.ami
   instance_type = var.default_instance_type
   user_data     = data.template_cloudinit_config.k8s_worker.rendered
@@ -63,13 +63,13 @@ resource "aws_launch_template" "k8s_worker" {
 
   network_interfaces {
     associate_public_ip_address = var.ec2_associate_public_ip_address
-    security_groups             = [aws_security_group.k8s-sg.id]
+    security_groups             = [aws_security_group.k8s_sg.id]
   }
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "template-${var.k8s_worker_template_prefix}-${var.environment}"
+      "Name" = lower("${var.common_prefix}-worker-tpl-${var.environment}")
     }
   )
 }

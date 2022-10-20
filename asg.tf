@@ -1,5 +1,5 @@
 resource "aws_autoscaling_group" "k8s_servers_asg" {
-  name                      = "k8s_servers"
+  name                      = "${var.common_prefix}-servers-asg-${var.environment}"
   wait_for_capacity_timeout = "5m"
   vpc_zone_identifier       = var.vpc_private_subnets
 
@@ -39,39 +39,24 @@ resource "aws_autoscaling_group" "k8s_servers_asg" {
   health_check_type         = "EC2"
   force_delete              = true
 
-  tag {
-    key                 = "provisioner"
-    value               = "terraform"
-    propagate_at_launch = true
+  dynamic "tag" {
+    for_each = local.global_tags
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
   }
 
   tag {
-    key                 = "environment"
-    value               = var.environment
+    key                 = "Name"
+    value               = "${var.common_prefix}-server-${var.environment}"
     propagate_at_launch = true
   }
 
   tag {
     key                 = "k8s-instance-type"
     value               = "k8s-server"
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "uuid"
-    value               = var.uuid
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "scope"
-    value               = "k8s-cluster"
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "k8s-server-${var.environment}"
     propagate_at_launch = true
   }
 
@@ -89,7 +74,7 @@ resource "aws_autoscaling_group" "k8s_servers_asg" {
 }
 
 resource "aws_autoscaling_group" "k8s_workers_asg" {
-  name                = "k8s_workers"
+  name                = "${var.common_prefix}-workers-asg-${var.environment}"
   vpc_zone_identifier = var.vpc_private_subnets
 
   lifecycle {
@@ -127,39 +112,24 @@ resource "aws_autoscaling_group" "k8s_workers_asg" {
   health_check_type         = "EC2"
   force_delete              = true
 
-  tag {
-    key                 = "provisioner"
-    value               = "terraform"
-    propagate_at_launch = true
+  dynamic "tag" {
+    for_each = local.global_tags
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
   }
 
   tag {
-    key                 = "environment"
-    value               = var.environment
+    key                 = "Name"
+    value               = "${var.common_prefix}-worker-${var.environment}"
     propagate_at_launch = true
   }
 
   tag {
     key                 = "k8s-instance-type"
     value               = "k8s-worker"
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "uuid"
-    value               = var.uuid
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "scope"
-    value               = "k8s-cluster"
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "k8s-worker-${var.environment}"
     propagate_at_launch = true
   }
 

@@ -1,93 +1,72 @@
-resource "aws_security_group" "k8s-sg" {
+resource "aws_security_group" "k8s_sg" {
   vpc_id      = var.vpc_id
-  name        = "k8s-sg"
+  name        = "k8s_sg"
   description = "Kubernetes ingress rules"
 
   lifecycle {
     create_before_destroy = true
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_subnet_cidr]
-  }
-
-  ingress {
-    from_port   = var.kube_api_port
-    to_port     = var.kube_api_port
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_subnet_cidr]
-  }
-
-  ingress {
-    from_port   = var.extlb_listener_http_port
-    to_port     = var.extlb_listener_http_port
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_subnet_cidr]
-  }
-
-  ingress {
-    from_port   = var.extlb_listener_https_port
-    to_port     = var.extlb_listener_https_port
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_subnet_cidr]
-  }
-
-  ingress {
-    protocol  = "-1"
-    self      = true
-    from_port = 0
-    to_port   = 0
-  }
-
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "sg-k8s-cluster-${var.environment}"
+      "Name" = lower("${var.common_prefix}-allow-strict-${var.environment}")
     }
   )
 }
 
-resource "aws_security_group" "k8s-public-lb" {
-  count       = var.install_nginx_ingress ? 1 : 0
-  vpc_id      = var.vpc_id
-  name        = "k8s-public-lb"
-  description = "Kubernetes public LB ingress rules"
+resource "aws_security_group_rule" "ingress_self" {
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  self              = true
+  security_group_id = aws_security_group.k8s_sg.id
+}
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+resource "aws_security_group_rule" "ingress_kubeapi" {
+  type              = "ingress"
+  from_port         = var.kube_api_port
+  to_port           = var.kube_api_port
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_subnet_cidr]
+  security_group_id = aws_security_group.k8s_sg.id
+}
 
-  ingress {
-    from_port   = var.extlb_http_port
-    to_port     = var.extlb_http_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+resource "aws_security_group_rule" "ingress_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_public_ip_cidr]
+  security_group_id = aws_security_group.k8s_sg.id
+}
 
-  ingress {
-    from_port   = var.extlb_https_port
-    to_port     = var.extlb_https_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+resource "aws_security_group_rule" "egress_all" {
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.k8s_sg.id
+}
 
-  tags = merge(
-    local.tags,
-    {
-      Name = "k8s-cluster-public-lb${var.environment}"
-    }
-  )
+resource "aws_security_group_rule" "allow_lb_http_traffic" {
+  count             = var.create_extlb ? 1 : 0
+  type              = "ingress"
+  from_port         = var.extlb_listener_http_port
+  to_port           = var.extlb_listener_http_port
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_subnet_cidr]
+  security_group_id = aws_security_group.k8s_sg.id
+}
+
+resource "aws_security_group_rule" "allow_lb_https_traffic" {
+  count             = var.create_extlb ? 1 : 0
+  type              = "ingress"
+  from_port         = var.extlb_listener_https_port
+  to_port           = var.extlb_listener_https_port
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_subnet_cidr]
+  security_group_id = aws_security_group.k8s_sg.id
 }

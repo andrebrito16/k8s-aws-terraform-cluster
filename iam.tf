@@ -1,18 +1,17 @@
 resource "aws_iam_instance_profile" "k8s_instance_profile" {
-  name = var.instance_profile_name
+  name = "${var.common_prefix}-k8s-instance-profile-${var.environment}"
   role = aws_iam_role.k8s_iam_role.name
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "k8s-instance-pofile-${var.environment}"
+      "Name" = lower("${var.common_prefix}-k8s-instance-profile-${var.environment}")
     }
   )
-
 }
 
 resource "aws_iam_role" "k8s_iam_role" {
-  name = var.iam_role_name
+  name = "${var.common_prefix}-k8s-iam-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -29,18 +28,17 @@ resource "aws_iam_role" "k8s_iam_role" {
   })
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "k8s-iam-role-${var.environment}"
+      "Name" = lower("${var.common_prefix}-k8s-iam-role-${var.environment}")
     }
   )
-
 }
 
-resource "aws_iam_policy" "s3_bucket_policy" {
-  name        = "S3BucketPolicy"
+resource "aws_iam_policy" "cluster_autoscaler" {
+  name        = "${var.common_prefix}-cluster-autoscaler-policy-${var.environment}"
   path        = "/"
-  description = "S3 Bucket Policy"
+  description = "Cluster autoscaler policy"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -48,72 +46,171 @@ resource "aws_iam_policy" "s3_bucket_policy" {
       {
         Effect = "Allow"
         Action = [
-          "s3:ListBucket"
+          "ec2:DescribeLaunchTemplateVersions"
         ],
         Resource = [
-          "${aws_s3_bucket.k8s_cert_bucket.arn}"
-        ]
+          "${aws_launch_template.k8s_server.arn}",
+          "${aws_launch_template.k8s_worker.arn}"
+        ],
+        Condition = {
+          StringEquals = {
+            for tag, value in local.global_tags : "aws:ResourceTag/${tag}" => value
+          }
+        }
       },
       {
         Effect = "Allow"
         Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:DeleteObject"
+          "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:DescribeAutoScalingInstances",
+          "autoscaling:DescribeLaunchConfigurations",
+          "autoscaling:SetDesiredCapacity",
+          "autoscaling:TerminateInstanceInAutoScalingGroup",
+          "autoscaling:DescribeTags",
         ],
         Resource = [
-          "${aws_s3_bucket.k8s_cert_bucket.arn}/*"
-        ]
+          "${aws_autoscaling_group.k8s_servers_asg.arn}",
+          "${aws_autoscaling_group.k8s_workers_asg.arn}"
+        ],
+        Condition = {
+          StringEquals = {
+            for tag, value in local.global_tags : "aws:ResourceTag/${tag}" => value
+          }
+        }
       },
     ]
   })
 
   tags = merge(
-    local.tags,
+    local.global_tags,
     {
-      Name = "k8s-s3-bucket-policy-${var.environment}"
+      "Name" = lower("${var.common_prefix}-cluster-autoscaler-policy-${var.environment}")
     }
   )
 }
 
-# resource "aws_iam_policy" "cluster_autoscaler" {
-#   name        = "ClusterAutoscalerPolicy"
-#   path        = "/"
-#   description = "Cluster autoscaler policy"
+resource "aws_iam_policy" "aws_efs_csi_driver_policy" {
+  name        = "${var.common_prefix}-csi-driver-policy-${var.environment}"
+  path        = "/"
+  description = "AWS EFS CSI driver policy"
 
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         Effect = "Allow"
-#         Action = [
-#           "autoscaling:DescribeAutoScalingGroups",
-#           "autoscaling:DescribeAutoScalingInstances",
-#           "autoscaling:DescribeLaunchConfigurations",
-#           "autoscaling:SetDesiredCapacity",
-#           "autoscaling:TerminateInstanceInAutoScalingGroup",
-#           "autoscaling:DescribeTags",
-#           "ec2:DescribeLaunchTemplateVersions"
-#         ],
-#         Resource = [
-#           "*"
-#         ]
-#       }
-#     ]
-#   })
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:DescribeAccessPoints",
+          "elasticfilesystem:DescribeFileSystems",
+          "elasticfilesystem:DescribeMountTargets",
+          "ec2:DescribeAvailabilityZones"
+        ],
+        Resource = [
+          "*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:CreateAccessPoint"
+        ],
+        Resource = [
+          "*"
+        ],
+        Condition = {
+          StringLike = {
+            "aws:RequestTag/efs.csi.aws.com/cluster" = "true"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:DeleteAccessPoint"
+        ],
+        Resource = [
+          "*"
+        ],
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/efs.csi.aws.com/cluster" = "true"
+          }
+        }
+      },
+    ]
+  })
 
-#   tags = {
-#     environment = "${var.environment}"
-#     provisioner = "terraform"
-#   }
-# }
+  tags = merge(
+    local.global_tags,
+    {
+      "Name" = lower("${var.common_prefix}-csi-driver-policy-${var.environment}")
+    }
+  )
+}
+
+resource "aws_iam_policy" "allow_secrets_manager" {
+  name        = "${var.common_prefix}-secrets-manager-policy-${var.environment}"
+  path        = "/"
+  description = "Secrets Manager Policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:ListSecrets",
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue"
+        ],
+        Resource = [
+          "${aws_secretsmanager_secret.kubeconfig_secret.arn}",
+          "${aws_secretsmanager_secret.kubeadm_ca.arn}",
+          "${aws_secretsmanager_secret.kubeadm_token.arn}",
+          "${aws_secretsmanager_secret.kubeadm_cert.arn}"
+        ],
+        Condition = {
+          StringEquals = {
+            for tag, value in local.global_tags : "aws:ResourceTag/${tag}" => value
+          }
+        }
+      }
+    ]
+  })
+
+  tags = merge(
+    local.global_tags,
+    {
+      "Name" = lower("${var.common_prefix}-secrets-manager-policy-${var.environment}")
+    }
+  )
+}
+
+resource "aws_iam_role_policy_attachment" "attach_ssm_policy" {
+  role       = aws_iam_role.k8s_iam_role.name
+  policy_arn = data.aws_iam_policy.AmazonSSMManagedInstanceCore.arn
+}
+
+resource "aws_iam_role_policy_attachment" "attach_cluster_autoscaler_policy" {
+  role       = aws_iam_role.k8s_iam_role.name
+  policy_arn = aws_iam_policy.cluster_autoscaler.arn
+}
+
+resource "aws_iam_role_policy_attachment" "attach_aws_efs_csi_driver_policy" {
+  role       = aws_iam_role.k8s_iam_role.name
+  policy_arn = aws_iam_policy.aws_efs_csi_driver_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "attach_allow_secrets_manager_policy" {
+  role       = aws_iam_role.k8s_iam_role.name
+  policy_arn = aws_iam_policy.allow_secrets_manager.arn
+}
 
 resource "aws_iam_role_policy_attachment" "attach_ec2_ro_policy" {
   role       = aws_iam_role.k8s_iam_role.name
   policy_arn = data.aws_iam_policy.AmazonEC2ReadOnlyAccess.arn
-}
-
-resource "aws_iam_role_policy_attachment" "attach_s3_bucket_policy" {
-  role       = aws_iam_role.k8s_iam_role.name
-  policy_arn = aws_iam_policy.s3_bucket_policy.arn
 }

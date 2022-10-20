@@ -1,5 +1,5 @@
 output "k8s_dns_name" {
-  value = aws_lb.external-lb.dns_name
+  value = var.create_extlb ? aws_lb.external_lb.*.dns_name : []
 }
 
 output "k8s_server_private_ips" {

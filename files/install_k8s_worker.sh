@@ -1,19 +1,33 @@
 #!/bin/bash
 
-wait_for_s3_object(){
-  until aws s3 ls s3://${s3_bucket_name}/ca.txt 
+wait_lb() {
+while [ true ]
+do
+  curl --output /dev/null --silent -k https://${control_plane_url}:${kube_api_port}
+  if [[ "$?" -eq 0 ]]; then
+    break
+  fi
+  sleep 5
+  echo "wait for LB"
+done
+}
+
+wait_for_ca_secret(){
+  res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+  while [[ -z "$res" ]]
   do
     echo "Waiting the ca hash ..."
-    sleep 10
+    res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
   done
 }
 
 render_kubejoin(){
 
 HOSTNAME=$(hostname)
-ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
-CA_HASH=$(aws s3 cp s3://${s3_bucket_name}/ca.txt -)
-KUBEADM_TOKEN=$(aws s3 cp s3://${s3_bucket_name}/kubeadm_token.txt -)
+ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | grep -Po '(?<=src )(\S+)')
+CA_HASH=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+KUBEADM_TOKEN=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
 
 cat <<-EOF > /root/kubeadm-join-worker.yaml
 ---
@@ -44,11 +58,8 @@ k8s_join(){
   kubeadm join --config /root/kubeadm-join-worker.yaml
 }
 
-until $(curl -k --output /dev/null --silent --head -X GET https://${control_plane_url}:${kube_api_port}); do
-  printf '.'
-  sleep 5
-done
+wait_lb
 
-wait_for_s3_object
+wait_for_ca_secret
 render_kubejoin
 k8s_join

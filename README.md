@@ -318,7 +318,7 @@ terraform plan
 
 ...
 ...
-      + name                   = "k8s-sg"
+      + name                   = "k8s_sg"
       + name_prefix            = (known after apply)
       + owner_id               = (known after apply)
       + revoke_rules_on_delete = false
