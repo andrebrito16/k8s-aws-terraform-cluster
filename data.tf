@@ -31,20 +31,21 @@ data "template_cloudinit_config" "k8s_server" {
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/install_k8s.sh", {
-      is_k8s_server             = true,
-      k8s_version               = var.k8s_version,
-      k8s_dns_domain            = var.k8s_dns_domain,
-      k8s_pod_subnet            = var.k8s_pod_subnet,
-      k8s_service_subnet        = var.k8s_service_subnet,
-      kubeadm_ca_secret_name    = local.kubeadm_ca_secret_name,
-      kubeadm_token_secret_name = local.kubeadm_token_secret_name,
-      kubeadm_cert_secret_name  = local.kubeadm_cert_secret_name,
-      kube_api_port             = var.kube_api_port,
-      control_plane_url         = aws_lb.k8s_server_lb.dns_name,
-      install_nginx_ingress     = var.install_nginx_ingress,
-      nginx_ingress_release     = var.nginx_ingress_release,
-      extlb_listener_http_port  = var.extlb_listener_http_port,
-      extlb_listener_https_port = var.extlb_listener_https_port,
+      is_k8s_server              = true,
+      k8s_version                = var.k8s_version,
+      k8s_dns_domain             = var.k8s_dns_domain,
+      k8s_pod_subnet             = var.k8s_pod_subnet,
+      k8s_service_subnet         = var.k8s_service_subnet,
+      kubeadm_ca_secret_name     = local.kubeadm_ca_secret_name,
+      kubeadm_token_secret_name  = local.kubeadm_token_secret_name,
+      kubeadm_cert_secret_name   = local.kubeadm_cert_secret_name,
+      kube_api_port              = var.kube_api_port,
+      control_plane_url          = aws_lb.k8s_server_lb.dns_name,
+      install_nginx_ingress      = var.install_nginx_ingress,
+      nginx_ingress_release      = var.nginx_ingress_release,
+      extlb_listener_http_port   = var.extlb_listener_http_port,
+      extlb_listener_https_port  = var.extlb_listener_https_port,
+      default_secret_placeholder = var.default_secret_placeholder,
     })
   }
 }
@@ -69,12 +70,13 @@ data "template_cloudinit_config" "k8s_worker" {
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/install_k8s_worker.sh", {
-      is_k8s_server             = false,
-      kubeadm_ca_secret_name    = local.kubeadm_ca_secret_name,
-      kubeadm_token_secret_name = local.kubeadm_token_secret_name,
-      kubeadm_cert_secret_name  = local.kubeadm_cert_secret_name,
-      kube_api_port             = var.kube_api_port,
-      control_plane_url         = aws_lb.k8s_server_lb.dns_name,
+      is_k8s_server              = false,
+      kubeadm_ca_secret_name     = local.kubeadm_ca_secret_name,
+      kubeadm_token_secret_name  = local.kubeadm_token_secret_name,
+      kubeadm_cert_secret_name   = local.kubeadm_cert_secret_name,
+      kube_api_port              = var.kube_api_port,
+      control_plane_url          = aws_lb.k8s_server_lb.dns_name,
+      default_secret_placeholder = var.default_secret_placeholder,
     })
   }
 }
@@ -86,7 +88,7 @@ data "aws_instances" "k8s_servers" {
   ]
 
   instance_tags = {
-    for tag, value in merge(local.global_tags, {k8s-instance-type = "k8s-server"}) : tag => value
+    for tag, value in merge(local.global_tags, { k8s-instance-type = "k8s-server" }) : tag => value
   }
 
   instance_state_names = ["running"]
@@ -99,7 +101,7 @@ data "aws_instances" "k8s_workers" {
   ]
 
   instance_tags = {
-    for tag, value in merge(local.global_tags, {k8s-instance-type = "k8s-worker"}) : tag => value
+    for tag, value in merge(local.global_tags, { k8s-instance-type = "k8s-worker" }) : tag => value
   }
 
   instance_state_names = ["running"]

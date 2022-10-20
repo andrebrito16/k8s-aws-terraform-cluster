@@ -14,10 +14,18 @@ done
 
 wait_for_ca_secret(){
   res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
-  while [[ -z "$res" ]]
+  while [[ -z "$res" || "$res" == "${default_secret_placeholder}" ]]
   do
     echo "Waiting the ca hash ..."
     res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+
+  res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_token" || "$res_token" == "${default_secret_placeholder}" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
     sleep 1
   done
 }

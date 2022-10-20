@@ -65,11 +65,27 @@ done
 }
 
 wait_for_ca_secret(){
-  res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
-  while [[ -z "$res" ]]
+  res_ca=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_ca" || "$res_ca" == "${default_secret_placeholder}" ]]
   do
     echo "Waiting the ca hash ..."
-    res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    res_ca=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+
+  res_cert=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_cert_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_cert" || "$res_cert" == "${default_secret_placeholder}" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res_cert=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_cert_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+
+  res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_cert" || "$res_cert" == "${default_secret_placeholder}" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res_cert=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
     sleep 1
   done
 }

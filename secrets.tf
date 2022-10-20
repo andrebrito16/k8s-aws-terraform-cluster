@@ -46,6 +46,28 @@ resource "aws_secretsmanager_secret" "kubeadm_cert" {
   )
 }
 
+# secret default values
+
+resource "aws_secretsmanager_secret_version" "kubeconfig_secret_default" {
+  secret_id     = aws_secretsmanager_secret.kubeconfig_secret.id
+  secret_string = var.default_secret_placeholder
+}
+
+resource "aws_secretsmanager_secret_version" "kubeadm_ca_default" {
+  secret_id     = aws_secretsmanager_secret.kubeadm_ca.id
+  secret_string = var.default_secret_placeholder
+}
+
+resource "aws_secretsmanager_secret_version" "kubeadm_token_default" {
+  secret_id     = aws_secretsmanager_secret.kubeadm_token.id
+  secret_string = var.default_secret_placeholder
+}
+
+resource "aws_secretsmanager_secret_version" "kubeadm_cert_default" {
+  secret_id     = aws_secretsmanager_secret.kubeadm_cert.id
+  secret_string = var.default_secret_placeholder
+}
+
 # Secret Policies
 
 resource "aws_secretsmanager_secret_policy" "kubeconfig_secret_policy" {

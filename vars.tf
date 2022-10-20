@@ -175,3 +175,8 @@ variable "extlb_https_port" {
   type    = number
   default = 443
 }
+
+variable "default_secret_placeholder" {
+  type    = string
+  default = "DEFAULTPLACEHOLDER"
+}
