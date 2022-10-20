@@ -57,7 +57,7 @@ resource "aws_security_group_rule" "allow_lb_http_traffic" {
   from_port         = var.extlb_listener_http_port
   to_port           = var.extlb_listener_http_port
   protocol          = "tcp"
-  cidr_blocks       = [var.vpc_subnet_cidr]
+  cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.k8s_sg.id
 }
 
@@ -67,6 +67,6 @@ resource "aws_security_group_rule" "allow_lb_https_traffic" {
   from_port         = var.extlb_listener_https_port
   to_port           = var.extlb_listener_https_port
   protocol          = "tcp"
-  cidr_blocks       = [var.vpc_subnet_cidr]
+  cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.k8s_sg.id
 }
