@@ -20,7 +20,7 @@ resource "aws_lb_listener" "external_lb_listener_http" {
   count             = var.install_nginx_ingress ? 1 : 0
   load_balancer_arn = aws_lb.external_lb[count.index].arn
 
-  protocol = "HTTP"
+  protocol = "TCP"
   port     = var.extlb_http_port
 
   default_action {
@@ -39,7 +39,7 @@ resource "aws_lb_listener" "external_lb_listener_http" {
 resource "aws_lb_target_group" "external_lb_tg_http" {
   count             = var.install_nginx_ingress ? 1 : 0
   port              = var.extlb_listener_http_port
-  protocol          = "HTTP"
+  protocol          = "TCP"
   vpc_id            = var.vpc_id
   proxy_protocol_v2 = true
 
@@ -48,8 +48,7 @@ resource "aws_lb_target_group" "external_lb_tg_http" {
   ]
 
   health_check {
-    protocol = "HTTP"
-    path     = "/healthz"
+    protocol = "TCP"
   }
 
   lifecycle {
@@ -80,7 +79,7 @@ resource "aws_lb_listener" "external_lb_listener_https" {
   count             = var.install_nginx_ingress ? 1 : 0
   load_balancer_arn = aws_lb.external_lb[count.index].arn
 
-  protocol = "HTTPS"
+  protocol = "TCP"
   port     = var.extlb_https_port
 
   default_action {
@@ -99,7 +98,7 @@ resource "aws_lb_listener" "external_lb_listener_https" {
 resource "aws_lb_target_group" "external_lb_tg_https" {
   count             = var.install_nginx_ingress ? 1 : 0
   port              = var.extlb_listener_https_port
-  protocol          = "HTTPS"
+  protocol          = "TCP"
   vpc_id            = var.vpc_id
   proxy_protocol_v2 = true
 
@@ -108,8 +107,7 @@ resource "aws_lb_target_group" "external_lb_tg_https" {
   ]
 
   health_check {
-    protocol = "HTTPS"
-    path     = "/healthz"
+    protocol = "TCP"
   }
 
   lifecycle {

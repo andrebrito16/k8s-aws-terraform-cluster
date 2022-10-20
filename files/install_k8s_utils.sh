@@ -32,7 +32,8 @@ preflight(){
       gnupg \
       openssl \
       lsb-release \
-      apt-transport-https
+      apt-transport-https \
+      jq
   
   render_config
 }

@@ -42,24 +42,32 @@ variable "ec2_associate_public_ip_address" {
   default = false
 }
 
+## eu-west-1
+# Ubuntu 22.04
+# ami-099b1e41f3043ce3a
+
+# Amazon Linux 2 AMI (HVM) - Kernel 5.10, SSD Volume Type
+# ami-0ea0f26a6d50850c5
+
 variable "ami" {
   type    = string
-  default = "ami-0a2616929f1e63d91"
+  default = "ami-099b1e41f3043ce3a"
 }
 
 variable "default_instance_type" {
-  type    = string
-  default = "t3.large"
+  type        = string
+  default     = "t3.medium"
+  description = "Instance type to be used"
 }
 
 variable "instance_types" {
   description = "List of instance types to use"
   type        = map(string)
   default = {
-    asg_instance_type_1 = "t3.large"
-    asg_instance_type_2 = "t2.large"
-    asg_instance_type_3 = "m4.large"
-    asg_instance_type_4 = "t3a.large"
+    asg_instance_type_1 = "t3.medium"
+    asg_instance_type_2 = "t3a.medium"
+    asg_instance_type_3 = "c5a.large"
+    asg_instance_type_4 = "c6a.large"
   }
 }
 

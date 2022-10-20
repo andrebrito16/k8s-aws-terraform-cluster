@@ -11,37 +11,37 @@ resource "aws_secretsmanager_secret" "kubeconfig_secret" {
 }
 
 resource "aws_secretsmanager_secret" "kubeadm_ca" {
-  name        = local.kubeconfig_secret_name
-  description = "Kubeconfig k3s. Cluster name: ${var.cluster_name}, environment: ${var.environment}"
+  name        = local.kubeadm_ca_secret_name
+  description = "Kubeadm CA. Cluster name: ${var.cluster_name}, environment: ${var.environment}"
 
   tags = merge(
     local.global_tags,
     {
-      "Name" = lower("${local.kubeconfig_secret_name}")
+      "Name" = lower("${local.kubeadm_ca_secret_name}")
     }
   )
 }
 
 resource "aws_secretsmanager_secret" "kubeadm_token" {
-  name        = local.kubeconfig_secret_name
-  description = "Kubeconfig k3s. Cluster name: ${var.cluster_name}, environment: ${var.environment}"
+  name        = local.kubeadm_token_secret_name
+  description = "Kubeadm token. Cluster name: ${var.cluster_name}, environment: ${var.environment}"
 
   tags = merge(
     local.global_tags,
     {
-      "Name" = lower("${local.kubeconfig_secret_name}")
+      "Name" = lower("${local.kubeadm_token_secret_name}")
     }
   )
 }
 
 resource "aws_secretsmanager_secret" "kubeadm_cert" {
-  name        = local.kubeconfig_secret_name
-  description = "Kubeconfig k3s. Cluster name: ${var.cluster_name}, environment: ${var.environment}"
+  name        = local.kubeadm_cert_secret_name
+  description = "Kubeadm cert. Cluster name: ${var.cluster_name}, environment: ${var.environment}"
 
   tags = merge(
     local.global_tags,
     {
-      "Name" = lower("${local.kubeconfig_secret_name}")
+      "Name" = lower("${local.kubeadm_cert_secret_name}")
     }
   )
 }

@@ -192,7 +192,18 @@ k8s_join(){
   cp /etc/kubernetes/admin.conf ~/.kube/config
 }
 
+wait_for_secretsmanager(){
+  res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+  while [[ -z "$res" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+}
+
 generate_secrets(){
+  wait_for_secretsmanager
   HASH=$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //')
   echo $HASH > /tmp/ca.txt
 
