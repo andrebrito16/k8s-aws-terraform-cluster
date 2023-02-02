@@ -39,7 +39,7 @@ preflight(){
 }
 
 install_aws_cli(){
-  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
   unzip awscliv2.zip
   sudo ./aws/install
   rm -rf aws awscliv2.zip
@@ -59,6 +59,14 @@ setup_repos(){
   apt-get update
 }
 
+render_crictl_conf(){
+cat <<-EOF | tee /etc/crictl.yaml
+---
+runtime-endpoint: unix:///var/run/containerd/containerd.sock
+image-endpoint: unix:///var/run/containerd/containerd.sock
+EOF
+}
+
 setup_cri(){
   apt-get install -y containerd.io
   mkdir -p /etc/containerd
@@ -68,6 +76,9 @@ setup_cri(){
       containerd config default | tee /etc/containerd/config.toml
   fi
   sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+  render_crictl_conf
+
   systemctl restart containerd
   systemctl enable containerd
 }

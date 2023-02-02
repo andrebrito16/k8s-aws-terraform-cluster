@@ -1,17 +1,17 @@
 resource "aws_iam_instance_profile" "k8s_instance_profile" {
-  name = "${var.common_prefix}-k8s-instance-profile-${var.environment}"
+  name = "${var.common_prefix}-ec2-instance-profile--${var.environment}"
   role = aws_iam_role.k8s_iam_role.name
 
   tags = merge(
     local.global_tags,
     {
-      "Name" = lower("${var.common_prefix}-k8s-instance-profile-${var.environment}")
+      "Name" = lower("${var.common_prefix}-ec2-instance-profile--${var.environment}")
     }
   )
 }
 
 resource "aws_iam_role" "k8s_iam_role" {
-  name = "${var.common_prefix}-k8s-iam-role-${var.environment}"
+  name = "${var.common_prefix}-iam-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -30,7 +30,7 @@ resource "aws_iam_role" "k8s_iam_role" {
   tags = merge(
     local.global_tags,
     {
-      "Name" = lower("${var.common_prefix}-k8s-iam-role-${var.environment}")
+      "Name" = lower("${var.common_prefix}-iam-role-${var.environment}")
     }
   )
 }
@@ -90,6 +90,7 @@ resource "aws_iam_policy" "cluster_autoscaler" {
 }
 
 resource "aws_iam_policy" "aws_efs_csi_driver_policy" {
+  count       = var.efs_persistent_storage ? 1 : 0
   name        = "${var.common_prefix}-csi-driver-policy-${var.environment}"
   path        = "/"
   description = "AWS EFS CSI driver policy"
@@ -115,7 +116,7 @@ resource "aws_iam_policy" "aws_efs_csi_driver_policy" {
           "elasticfilesystem:CreateAccessPoint"
         ],
         Resource = [
-          "*"
+          "${aws_efs_file_system.k8s_persistent_storage[0].arn}"
         ],
         Condition = {
           StringLike = {
@@ -129,7 +130,7 @@ resource "aws_iam_policy" "aws_efs_csi_driver_policy" {
           "elasticfilesystem:DeleteAccessPoint"
         ],
         Resource = [
-          "*"
+          "${aws_efs_file_system.k8s_persistent_storage[0].arn}"
         ],
         Condition = {
           StringEquals = {
@@ -201,8 +202,9 @@ resource "aws_iam_role_policy_attachment" "attach_cluster_autoscaler_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "attach_aws_efs_csi_driver_policy" {
+  count      = var.efs_persistent_storage ? 1 : 0
   role       = aws_iam_role.k8s_iam_role.name
-  policy_arn = aws_iam_policy.aws_efs_csi_driver_policy.arn
+  policy_arn = aws_iam_policy.aws_efs_csi_driver_policy[0].arn
 }
 
 resource "aws_iam_role_policy_attachment" "attach_allow_secrets_manager_policy" {

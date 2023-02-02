@@ -33,7 +33,7 @@ certificatesDir: /etc/kubernetes/pki
 clusterName: kubernetes
 controllerManager: {}
 dns: {}
-imageRepository: k8s.gcr.io
+imageRepository: registry.k8s.io
 kind: ClusterConfiguration
 kubernetesVersion: ${k8s_version}
 controlPlaneEndpoint: ${control_plane_url}:${kube_api_port}
@@ -149,17 +149,11 @@ EOF
 }
 
 render_nginx_config(){
-cat <<-EOF > /root/nginx-ingress-config.yaml
+cat << 'EOF' > "$NGINX_RESOURCES_FILE"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    app.kubernetes.io/component: controller
-    app.kubernetes.io/instance: ingress-nginx
-    app.kubernetes.io/name: ingress-nginx
-    app.kubernetes.io/part-of: ingress-nginx
-    app.kubernetes.io/version: 1.1.3
   name: ingress-nginx-controller
   namespace: ingress-nginx
 spec:
@@ -202,10 +196,33 @@ metadata:
 EOF
 }
 
+install_and_configure_nginx(){
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${nginx_ingress_release}/deploy/static/provider/baremetal/deploy.yaml
+  NGINX_RESOURCES_FILE=/root/nginx-ingress-resources.yaml
+  render_nginx_config
+  kubectl apply -f $NGINX_RESOURCES_FILE
+}
+
+install_and_configure_csi_driver(){
+  git clone https://github.com/kubernetes-sigs/aws-efs-csi-driver.git
+  cd aws-efs-csi-driver/
+  git checkout tags/${efs_csi_driver_release} -b kube_deploy_${efs_csi_driver_release}
+  kubectl apply -k deploy/kubernetes/overlays/stable/
+
+  # Uncomment this to mount the EFS share on the first k8s-server node
+  # mkdir /efs
+  # aws_region="$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
+  # mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${efs_filesystem_id}.efs.$aws_region.amazonaws.com:/ /efs
+}
+
 k8s_join(){
   kubeadm join --config /root/kubeadm-join-master.yaml
   mkdir ~/.kube
   cp /etc/kubernetes/admin.conf ~/.kube/config
+
+  # Upload kubeconfig on AWS secret manager
+  cat ~/.kube/config | sed 's/server: https:\/\/127.0.0.1:6443/server: https:\/\/${control_plane_url}:${kube_api_port}/' > /root/kube.conf
+  aws secretsmanager update-secret --secret-id ${kubeconfig_secret_name} --secret-string file:///root/kube.conf
 }
 
 wait_for_secretsmanager(){
@@ -260,9 +277,10 @@ if [[ "$first_instance" == "$instance_id" ]]; then
   sleep 180
   wait_for_masters
   %{ if install_nginx_ingress }
-  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${nginx_ingress_release}/deploy/static/provider/baremetal/deploy.yaml
-  render_nginx_config
-  kubectl apply -f /root/nginx-ingress-config.yaml
+  install_and_configure_nginx
+  %{ endif }
+  %{ if efs_persistent_storage }
+  install_and_configure_csi_driver
   %{ endif }
 else
   wait_for_ca_secret

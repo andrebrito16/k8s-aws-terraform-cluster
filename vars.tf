@@ -73,7 +73,7 @@ variable "instance_types" {
 
 variable "k8s_version" {
   type    = string
-  default = "1.23.5"
+  default = "1.25.6"
 }
 
 variable "k8s_pod_subnet" {
@@ -147,13 +147,23 @@ variable "install_nginx_ingress" {
 
 variable "nginx_ingress_release" {
   type    = string
-  default = "v1.3.1"
+  default = "v1.5.1"
 }
 
 variable "create_extlb" {
   type        = bool
   default     = false
   description = "Create external LB true/false"
+}
+
+variable "efs_persistent_storage" {
+  type    = bool
+  default = false
+}
+
+variable "efs_csi_driver_release" {
+  type    = string
+  default = "v1.4.2"
 }
 
 variable "extlb_listener_http_port" {
