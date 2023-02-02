@@ -50,6 +50,8 @@ data "template_cloudinit_config" "k8s_server" {
       extlb_listener_http_port   = var.extlb_listener_http_port,
       extlb_listener_https_port  = var.extlb_listener_https_port,
       default_secret_placeholder = var.default_secret_placeholder,
+      expose_kubeapi             = var.expose_kubeapi,
+      k8s_tls_san_public         = local.k8s_tls_san_public
     })
   }
 }

@@ -28,6 +28,12 @@ nodeRegistration:
 ---
 apiServer:
   timeoutForControlPlane: 4m0s
+  certSANs:
+    - $HOSTNAME
+    - $ADVERTISE_ADDR
+    %{~ if expose_kubeapi ~}
+    - ${k8s_tls_san_public}
+    %{~ endif ~}
 apiVersion: kubeadm.k8s.io/v1beta3
 certificatesDir: /etc/kubernetes/pki
 clusterName: kubernetes
@@ -98,7 +104,7 @@ wait_for_pods(){
 }
 
 wait_for_masters(){
-  until kubectl get nodes -o wide | grep 'control-plane,master'; do
+  until kubectl get nodes -o wide | grep 'control-plane'; do
     echo 'Waiting for k8s control-planes'
     sleep 5
   done

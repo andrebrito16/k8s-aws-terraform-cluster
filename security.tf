@@ -71,6 +71,16 @@ resource "aws_security_group_rule" "allow_lb_https_traffic" {
   security_group_id = aws_security_group.k8s_sg.id
 }
 
+resource "aws_security_group_rule" "allow_lb_kubeapi_traffic" {
+  count             = var.create_extlb && var.expose_kubeapi ? 1 : 0
+  type              = "ingress"
+  from_port         = var.kube_api_port
+  to_port           = var.kube_api_port
+  protocol          = "tcp"
+  cidr_blocks       = [var.my_public_ip_cidr]
+  security_group_id = aws_security_group.k8s_sg.id
+}
+
 resource "aws_security_group" "efs_sg" {
   count       = var.efs_persistent_storage ? 1 : 0
   vpc_id      = var.vpc_id

@@ -190,3 +190,8 @@ variable "default_secret_placeholder" {
   type    = string
   default = "DEFAULTPLACEHOLDER"
 }
+
+variable "expose_kubeapi" {
+  type    = bool
+  default = false
+}

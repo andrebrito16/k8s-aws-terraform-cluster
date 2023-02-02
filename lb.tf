@@ -132,3 +132,62 @@ resource "aws_autoscaling_attachment" "target_https" {
   autoscaling_group_name = aws_autoscaling_group.k8s_workers_asg.name
   lb_target_group_arn    = aws_lb_target_group.external_lb_tg_https[count.index].arn
 }
+
+# kubeapi
+
+resource "aws_lb_listener" "external_lb_listener_kubeapi" {
+  count             = var.expose_kubeapi ? 1 : 0
+  load_balancer_arn = aws_lb.external_lb[count.index].arn
+
+  protocol = "TCP"
+  port     = var.kube_api_port
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.external_lb_tg_kubeapi[count.index].arn
+  }
+
+  tags = merge(
+    local.global_tags,
+    {
+      "Name" = lower("${var.common_prefix}-kubeapi-listener-${var.environment}")
+    }
+  )
+}
+
+resource "aws_lb_target_group" "external_lb_tg_kubeapi" {
+  count    = var.expose_kubeapi ? 1 : 0
+  port     = var.kube_api_port
+  protocol = "TCP"
+  vpc_id   = var.vpc_id
+
+  depends_on = [
+    aws_lb.external_lb
+  ]
+
+  health_check {
+    protocol = "TCP"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge(
+    local.global_tags,
+    {
+      "Name" = lower("${var.common_prefix}-ext-lb-tg-kubeapi-${var.environment}")
+    }
+  )
+}
+
+resource "aws_autoscaling_attachment" "target_kubeapi" {
+  count = var.expose_kubeapi ? 1 : 0
+  depends_on = [
+    aws_autoscaling_group.k8s_servers_asg,
+    aws_lb_target_group.external_lb_tg_kubeapi
+  ]
+
+  autoscaling_group_name = aws_autoscaling_group.k8s_servers_asg.name
+  lb_target_group_arn    = aws_lb_target_group.external_lb_tg_kubeapi[count.index].arn
+}
