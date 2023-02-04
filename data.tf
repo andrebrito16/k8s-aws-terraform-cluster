@@ -1,8 +1,3 @@
-resource "random_password" "k8s_token" {
-  length  = 55
-  special = false
-}
-
 data "aws_iam_policy" "AmazonEC2ReadOnlyAccess" {
   arn = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
 }

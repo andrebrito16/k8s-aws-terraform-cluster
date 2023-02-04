@@ -28,7 +28,6 @@ resource "aws_autoscaling_group" "k8s_servers_asg" {
           weighted_capacity = "1"
         }
       }
-
     }
   }
 
