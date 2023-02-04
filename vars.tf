@@ -191,16 +191,6 @@ variable "extlb_listener_https_port" {
   default = 30443
 }
 
-variable "extlb_http_port" {
-  type    = number
-  default = 80
-}
-
-variable "extlb_https_port" {
-  type    = number
-  default = 443
-}
-
 variable "default_secret_placeholder" {
   type    = string
   default = "DEFAULTPLACEHOLDER"

@@ -235,8 +235,6 @@ Once you have created the terraform.tfvars file edit the main.tf file (always in
 | `k8s_ext_lb_name`  | `no`  | External load balancer name. Default: k8s-ext-lb |
 | `extlb_listener_http_port`  | `no`  | HTTP nodeport where nginx ingress controller will listen. Default: 30080 |
 | `extlb_listener_https_port`  | `no`  | HTTPS nodeport where nginx ingress controller will listen. Default 30443 |
-| `extlb_http_port`  | `no`  | External LB HTTP listen port. Default: 80 |
-| `extlb_https_port`  | `no`  | External LB HTTPS listen port. Default 443 |
 
 ## Deploy
 
