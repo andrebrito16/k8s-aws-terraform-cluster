@@ -150,6 +150,21 @@ variable "nginx_ingress_release" {
   default = "v1.5.1"
 }
 
+variable "install_certmanager" {
+  type    = bool
+  default = true
+}
+
+variable "certmanager_release" {
+  type    = string
+  default = "v1.11.0"
+}
+
+variable "certmanager_email_address" {
+  type    = string
+  default = "changeme@example.com"
+}
+
 variable "create_extlb" {
   type        = bool
   default     = false

@@ -209,6 +209,71 @@ install_and_configure_nginx(){
   kubectl apply -f $NGINX_RESOURCES_FILE
 }
 
+render_staging_issuer(){
+STAGING_ISSUER_RESOURCE=$1
+cat << 'EOF' > "$STAGING_ISSUER_RESOURCE"
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+ name: letsencrypt-staging
+ namespace: cert-manager
+spec:
+ acme:
+   # The ACME server URL
+   server: https://acme-staging-v02.api.letsencrypt.org/directory
+   # Email address used for ACME registration
+   email: ${certmanager_email_address}
+   # Name of a secret used to store the ACME account private key
+   privateKeySecretRef:
+     name: letsencrypt-staging
+   # Enable the HTTP-01 challenge provider
+   solvers:
+   - http01:
+       ingress:
+         class:  nginx
+EOF
+}
+
+render_prod_issuer(){
+PROD_ISSUER_RESOURCE=$1
+cat << 'EOF' > "$PROD_ISSUER_RESOURCE"
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  namespace: cert-manager
+spec:
+  acme:
+    # The ACME server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: ${certmanager_email_address}
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    # Enable the HTTP-01 challenge provider
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+}
+
+install_and_configure_certmanager(){
+  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/${certmanager_release}/cert-manager.yaml
+  render_staging_issuer /root/staging_issuer.yaml
+  render_prod_issuer /root/prod_issuer.yaml
+
+  # Wait cert-manager to be ready
+  until kubectl get pods -n cert-manager | grep 'Running'; do
+    echo 'Waiting for cert-manager to be ready'
+    sleep 15
+  done
+
+  kubectl create -f /root/prod_issuer.yaml
+  kubectl create -f /root/staging_issuer.yaml
+}
+
 install_and_configure_csi_driver(){
   git clone https://github.com/kubernetes-sigs/aws-efs-csi-driver.git
   cd aws-efs-csi-driver/
@@ -284,6 +349,9 @@ if [[ "$first_instance" == "$instance_id" ]]; then
   wait_for_masters
   %{ if install_nginx_ingress }
   install_and_configure_nginx
+  %{ endif }
+  %{ if install_certmanager }
+  install_and_configure_certmanager
   %{ endif }
   %{ if efs_persistent_storage }
   install_and_configure_csi_driver
