@@ -200,3 +200,13 @@ variable "expose_kubeapi" {
   type    = bool
   default = false
 }
+
+variable "install_node_termination_handler" {
+  type    = bool
+  default = true
+}
+
+variable "node_termination_handler_release" {
+  type    = string
+  default = "v1.17.3"
+}

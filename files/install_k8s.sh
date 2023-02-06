@@ -356,6 +356,11 @@ if [[ "$first_instance" == "$instance_id" ]]; then
   %{ if efs_persistent_storage }
   install_and_configure_csi_driver
   %{ endif }
+  %{ if install_node_termination_handler }
+  #Install node termination handler
+  echo 'Install node termination handler'
+  kubectl apply -f https://github.com/aws/aws-node-termination-handler/releases/download/${node_termination_handler_release}/all-resources.yaml
+  %{ endif }
 else
   wait_for_ca_secret
   render_kubejoin
