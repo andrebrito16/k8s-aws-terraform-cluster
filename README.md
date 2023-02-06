@@ -17,16 +17,20 @@ The scope of this repo is to show all the AWS components needed to deploy a high
 
 # Table of Contents
 
-* [Requirements](#requirements)
-* [Infrastructure overview](#infrastructure-overview)
-* [Before you start](#before-you-start)
-* [Project setup](#project-setup)
-* [AWS provider setup](#aws-provider-setup)
-* [Pre flight checklist](#pre-flight-checklist)
-* [Deploy](#deploy)
-* [Deploy a sample stack](#deploy-a-sample-stack)
-* [Clean up](#clean-up)
-* [Todo](#todo)
+- [Deploy Kubernetes on Amazon AWS](#deploy-kubernetes-on-amazon-aws)
+- [Table of Contents](#table-of-contents)
+  - [Requirements](#requirements)
+  - [Infrastructure overview](#infrastructure-overview)
+  - [Kubernetes setup](#kubernetes-setup)
+  - [Before you start](#before-you-start)
+  - [Project setup](#project-setup)
+  - [AWS provider setup](#aws-provider-setup)
+  - [Pre flight checklist](#pre-flight-checklist)
+  - [Deploy](#deploy)
+    - [Public LB check](#public-lb-check)
+  - [Deploy a sample stack](#deploy-a-sample-stack)
+  - [Clean up](#clean-up)
+  - [Todo](#todo)
 
 ## Requirements
 
@@ -80,13 +84,13 @@ git clone https://github.com/garutilorenzo/k8s-aws-terraform-cluster
 cd k8s-aws-terraform-cluster/example/
 ```
 
-Now you have to edit the main.tf file and you have to create the terraform.tfvars file. For more detail see [AWS provider setup](#aws-provider-setup) and [Pre flight checklist](#pre-flight-checklist).
+Now you have to edit the `main.tf` file and you have to create the `terraform.tfvars` file. For more detail see [AWS provider setup](#aws-provider-setup) and [Pre flight checklist](#pre-flight-checklist).
 
 Or if you prefer you can create an new empty directory in your workspace and create this three files:
 
-* terraform.tfvars
-* main.tf
-* provider.tf
+* `terraform.tfvars`
+* `main.tf`
+* `provider.tf`
 
 The main.tf file will look like:
 
@@ -135,7 +139,7 @@ output "k8s_workers_private_ips" {
 
 For all the possible variables see [Pre flight checklist](#pre-flight-checklist)
 
-The provider.tf will look like:
+The `provider.tf` will look like:
 
 ```
 provider "aws" {
@@ -145,7 +149,7 @@ provider "aws" {
 }
 ```
 
-The terraform.tfvars will look like:
+The `terraform.tfvars` will look like:
 
 ```
 AWS_ACCESS_KEY = "xxxxxxxxxxxxxxxxx"
@@ -189,7 +193,7 @@ commands will detect it and remind you to do so if necessary.
 ## AWS provider setup
 
 Follow the prerequisites step on [this](https://learn.hashicorp.com/tutorials/terraform/aws-build?in=terraform/aws-get-started) link.
-In your workspace folder or in the examples directory of this repo create a file named terraform.tfvars:
+In your workspace folder or in the examples directory of this repo create a file named `terraform.tfvars`:
 
 ```
 AWS_ACCESS_KEY = "xxxxxxxxxxxxxxxxx"
@@ -198,7 +202,7 @@ AWS_SECRET_KEY = "xxxxxxxxxxxxxxxxx"
 
 ## Pre flight checklist
 
-Once you have created the terraform.tfvars file edit the main.tf file (always in the example/ directory) and set the following variables:
+Once you have created the `terraform.tfvars` file edit the `main.tf` file (always in the example/ directory) and set the following variables:
 
 | Var   | Required | Desc |
 | ------- | ------- | ----------- |
@@ -477,8 +481,3 @@ TBD
 ```
 terraform destroy
 ```
-
-## TODO
-
-* Extend the IAM role for the cluster autoscaler
-* Install the node termination handler for the EC2 spot instances
