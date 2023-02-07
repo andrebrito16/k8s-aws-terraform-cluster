@@ -22,6 +22,8 @@ The scope of this repo is to show all the AWS components needed to deploy a high
   - [Requirements](#requirements)
   - [Infrastructure overview](#infrastructure-overview)
   - [Kubernetes setup](#kubernetes-setup)
+    - [Nginx ingress controller](#nginx-ingress-controller)
+    - [Cert manager](#cert-manager)
   - [Before you start](#before-you-start)
   - [Project setup](#project-setup)
   - [AWS provider setup](#aws-provider-setup)
@@ -54,10 +56,9 @@ The final infrastructure will be made by:
 * two autoscaling group, one for the kubernetes master nodes and one for the worker nodes
 * two launch template, used by the asg
 * one internal load balancer (L4) that will route traffic to Kubernetes servers
-* one external load balancer (L7) that will route traffic to Kubernetes workers
+* one external load balancer (L4) that will route traffic to Kubernetes workers
 * one security group that will allow traffic from the VPC subnet CIDR on all the k8s ports (kube api, nginx ingress node port etc)
-* one security group that will allow traffic from all the internet into the public load balancer (L7) on port 80 and 443
-* one certificate used by the public LB, stored on AWS ACM. The certificate is a self signed certificate.
+* one security group that will allow traffic from all the internet into the public load balancer (L4) on port 80 and 443
 
 ![k8s infra](https://garutilorenzo.github.io/images/k8s-infra.png?)
 
@@ -69,7 +70,72 @@ You can optionally install [Nginx ingress controller](https://kubernetes.github.
 
 To install Nginx ingress set the variable *install_nginx_ingress* to yes (default no).
 
-TBD
+### Nginx ingress controller
+
+You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) To enable the longhorn deployment set `install_nginx_ingress` variable to `true`.
+
+The installation is the [bare metal](https://kubernetes.github.io/ingress-nginx/deploy/#bare-metal-clusters) installation, the ingress controller then is exposed via a NodePort Service.
+
+```yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-controller-loadbalancer
+  namespace: ingress-nginx
+spec:
+  selector:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 443
+  type: LoadBalancer
+```
+
+To get the real ip address of the clients using a public L4 load balancer we need to use the proxy protocol feature of nginx ingress controller:
+
+```yaml
+---
+apiVersion: v1
+data:
+  allow-snippet-annotations: "true"
+  enable-real-ip: "true"
+  proxy-real-ip-cidr: "0.0.0.0/0"
+  proxy-body-size: "20m"
+  use-proxy-protocol: "true"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+    app.kubernetes.io/version: ${nginx_ingress_release}
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+```
+
+**NOTE** to use nginx ingress controller with the proxy protocol enabled, an external nginx instance is used as proxy (since OCI LB doesn't support proxy protocol at the moment). Nginx will be installed on each worker node and the configuation of nginx will:
+
+* listen in proxy protocol mode
+* forward the traffic from port `80` to `extlb_http_port` (default to `30080`) on any server of the cluster
+* forward the traffic from port `443` to `extlb_https_port` (default to `30443`) on any server of the cluster
+
+This is the final result:
+
+Client -> Public L4 LB (with proxy protocol enabled) -> nginx ingress (with proxy protocol enabled) -> k8s service -> pod(s)
+
+### Cert-manager
+
+[cert-manager](https://cert-manager.io/docs/) is used to issue certificates from a variety of supported source. To use cert-manager take a look at [nginx-ingress-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-ingress-cert-manager.yml) and [nginx-configmap-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-configmap-cert-manager.yml) example. To use cert-manager and get the certificate you **need** set on your DNS configuration the public ip address of the load balancer.
 
 ## Before you start
 
@@ -208,26 +274,23 @@ Once you have created the `terraform.tfvars` file edit the `main.tf` file (alway
 | ------- | ------- | ----------- |
 | `region`       | `yes`       | set the correct OCI region based on your needs  |
 | `environment`  | `yes`  | Current work environment (Example: staging/dev/prod). This value is used for tag all the deployed resources |
-| `uuid`  | `yes`  | UUID used to tag all resources |
+| `common_prefix`  | `no`  | Prefix used in all resource names/tags. Default: k8s |
 | `ssk_key_pair_name`  | `yes`  | Name of the ssh key to use |
+| `my_public_ip_cidr` | `yes`        |  your public ip in cidr format (Example: 195.102.xxx.xxx/32) |
 | `vpc_id`  | `yes`  |  ID of the VPC to use. You can find your vpc_id in your AWS console (Example: vpc-xxxxx) |
 | `vpc_private_subnets`  | `yes`  |  List of private subnets to use. This subnets are used for the public LB You can find the list of your vpc subnets in your AWS console (Example: subnet-xxxxxx) |
 | `vpc_public_subnets`   | `yes`  |  List of public subnets to use. This subnets are used for the EC2 instances and the private LB. You can find the list of your vpc subnets in your AWS console (Example: subnet-xxxxxx) |
 | `vpc_subnet_cidr`  | `yes`  |  Your subnet CIDR. You can find the VPC subnet CIDR in your AWS console (Example: 172.31.0.0/16) |
 | `ec2_associate_public_ip_address`  | `no`  |  Assign or not a pulic ip to the EC2 instances. Default: false |
 | `instance_profile_name`  | `no`  | Instance profile name. Default: K8sInstanceProfile |
-| `iam_role_name`  | `no`  | IAM role name. Default: K8sIamRole |
 | `ami`  | `no`  | Ami image name. Default: ami-0a2616929f1e63d91, ubuntu 20.04 |
 | `default_instance_type`  | `no`  | Default instance type used by the Launch template. Default: t3.large |
 | `instance_types`  | `no`  | Array of instances used by the ASG. Dfault: { asg_instance_type_1 = "t3.large", asg_instance_type_3 = "m4.large", asg_instance_type_4 = "t3a.large" } |
-| `k8s_master_template_prefix`  | `no`  | Template prefix for the master instances. Default: k8s_master_tpl |
-| `k8s_worker_template_prefix`  | `no`  | Template prefix for the worker instances. Default: k8s_worker_tpl  |
 | `k8s_version`  | `no`  | Kubernetes version to install  |
 | `k8s_pod_subnet`  | `no`  | Kubernetes pod subnet managed by the CNI (Flannel). Default: 10.244.0.0/16 |
 | `k8s_service_subnet`  | `no`  | Kubernetes pod service managed by the CNI (Flannel). Default: 10.96.0.0/12 |
 | `k8s_dns_domain`  | `no`  | Internal kubernetes DNS domain. Default: cluster.local |
 | `kube_api_port`  | `no`  | Kubernetes api port. Default: 6443 |
-| `k8s_internal_lb_name`  | `no`  | Internal load balancer name. Default: k8s-server-tcp-lb |
 | `k8s_server_desired_capacity` | `no`        | Desired number of k8s servers. Default 3 |
 | `k8s_server_min_capacity` | `no`        | Min number of k8s servers: Default 4 |
 | `k8s_server_max_capacity` | `no`        |  Max number of k8s servers: Default 3 |
@@ -236,9 +299,17 @@ Once you have created the `terraform.tfvars` file edit the `main.tf` file (alway
 | `k8s_worker_max_capacity` | `no`        | Max number of k8s workers: Default 3 |
 | `cluster_name`  | `no`  | Kubernetes cluster name. Default: k8s-cluster |
 | `install_nginx_ingress`  | `no`  | Install or not nginx ingress controller. Default: false |
-| `k8s_ext_lb_name`  | `no`  | External load balancer name. Default: k8s-ext-lb |
+| `nginx_ingress_release`  | `no`  | Nginx ingress release to install. Default: v1.5.1|
+| `install_certmanager`  | `no`  | Boolean value, install [cert manager](https://cert-manager.io/) "Cloud native certificate management". Default: true  |
+| `certmanager_email_address`  | `no`  | Email address used for signing https certificates. Defaul: changeme@example.com  |
+| `certmanager_release`  | `no`  | Cert manager release. Default: v1.11.0  |
+| `efs_persistent_storage`  | `no`  | Deploy EFS for persistent sotrage  |
+| `efs_csi_driver_release`  | `no`  | EFS CSI driver Release: v1.4.2   |
 | `extlb_listener_http_port`  | `no`  | HTTP nodeport where nginx ingress controller will listen. Default: 30080 |
 | `extlb_listener_https_port`  | `no`  | HTTPS nodeport where nginx ingress controller will listen. Default 30443 |
+| `extlb_http_port`  | `no`  | External LB HTTP listen port. Default: 80 |
+| `extlb_https_port`  | `no`  | External LB HTTPS listen port. Default 443 |
+| `expose_kubeapi`  | `no`  | Boolean value, default false. Expose or not the kubeapi server to the internet. Access is granted only from *my_public_ip_cidr* for security reasons. |
 
 ## Deploy
 

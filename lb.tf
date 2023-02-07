@@ -21,7 +21,7 @@ resource "aws_lb_listener" "external_lb_listener_http" {
   load_balancer_arn = aws_lb.external_lb[count.index].arn
 
   protocol = "TCP"
-  port     = var.extlb_listener_http_port
+  port     = var.extlb_http_port
 
   default_action {
     type             = "forward"
@@ -80,7 +80,7 @@ resource "aws_lb_listener" "external_lb_listener_https" {
   load_balancer_arn = aws_lb.external_lb[count.index].arn
 
   protocol = "TCP"
-  port     = var.extlb_listener_https_port
+  port     = var.extlb_https_port
 
   default_action {
     type             = "forward"
