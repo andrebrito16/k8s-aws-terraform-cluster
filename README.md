@@ -20,14 +20,14 @@ The scope of this repo is to show all the AWS components needed to deploy a high
 - [Deploy Kubernetes on Amazon AWS](#deploy-kubernetes-on-amazon-aws)
 - [Table of Contents](#table-of-contents)
   - [Requirements](#requirements)
-  - [Infrastructure overview](#infrastructure-overview)
-  - [Kubernetes setup](#kubernetes-setup)
-    - [Nginx ingress controller](#nginx-ingress-controller)
-    - [Cert manager](#cert-manager)
   - [Before you start](#before-you-start)
   - [Project setup](#project-setup)
   - [AWS provider setup](#aws-provider-setup)
   - [Pre flight checklist](#pre-flight-checklist)
+  - [Infrastructure overview](#infrastructure-overview)
+  - [Kubernetes setup](#kubernetes-setup)
+    - [Nginx ingress controller](#nginx-ingress-controller)
+    - [Cert manager](#cert-manager)
   - [Deploy](#deploy)
     - [Public LB check](#public-lb-check)
   - [Deploy a sample stack](#deploy-a-sample-stack)
@@ -48,94 +48,6 @@ You need also:
 * one bastion host to reach all the private EC2 instances
 
 For VPC and bastion host you can refer to [this](https://github.com/garutilorenzo/aws-terraform-examples) repository.
-
-## Infrastructure overview
-
-The final infrastructure will be made by:
-
-* two autoscaling group, one for the kubernetes master nodes and one for the worker nodes
-* two launch template, used by the asg
-* one internal load balancer (L4) that will route traffic to Kubernetes servers
-* one external load balancer (L4) that will route traffic to Kubernetes workers
-* one security group that will allow traffic from the VPC subnet CIDR on all the k8s ports (kube api, nginx ingress node port etc)
-* one security group that will allow traffic from all the internet into the public load balancer (L4) on port 80 and 443
-
-![k8s infra](https://garutilorenzo.github.io/images/k8s-infra.png?)
-
-## Kubernetes setup
-
-The installation of K8s id done by [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/). In this installation [Containerd](https://containerd.io/) is used as CRI and [flannel](https://github.com/flannel-io/flannel) is used as CNI.
-
-You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/).
-
-To install Nginx ingress set the variable *install_nginx_ingress* to yes (default no).
-
-### Nginx ingress controller
-
-You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) To enable the longhorn deployment set `install_nginx_ingress` variable to `true`.
-
-The installation is the [bare metal](https://kubernetes.github.io/ingress-nginx/deploy/#bare-metal-clusters) installation, the ingress controller then is exposed via a NodePort Service.
-
-```yaml
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ingress-nginx-controller-loadbalancer
-  namespace: ingress-nginx
-spec:
-  selector:
-    app.kubernetes.io/component: controller
-    app.kubernetes.io/instance: ingress-nginx
-    app.kubernetes.io/name: ingress-nginx
-  ports:
-    - name: http
-      port: 80
-      protocol: TCP
-      targetPort: 80
-    - name: https
-      port: 443
-      protocol: TCP
-      targetPort: 443
-  type: LoadBalancer
-```
-
-To get the real ip address of the clients using a public L4 load balancer we need to use the proxy protocol feature of nginx ingress controller:
-
-```yaml
----
-apiVersion: v1
-data:
-  allow-snippet-annotations: "true"
-  enable-real-ip: "true"
-  proxy-real-ip-cidr: "0.0.0.0/0"
-  proxy-body-size: "20m"
-  use-proxy-protocol: "true"
-kind: ConfigMap
-metadata:
-  labels:
-    app.kubernetes.io/component: controller
-    app.kubernetes.io/instance: ingress-nginx
-    app.kubernetes.io/name: ingress-nginx
-    app.kubernetes.io/part-of: ingress-nginx
-    app.kubernetes.io/version: ${nginx_ingress_release}
-  name: ingress-nginx-controller
-  namespace: ingress-nginx
-```
-
-**NOTE** to use nginx ingress controller with the proxy protocol enabled, an external nginx instance is used as proxy (since OCI LB doesn't support proxy protocol at the moment). Nginx will be installed on each worker node and the configuation of nginx will:
-
-* listen in proxy protocol mode
-* forward the traffic from port `80` to `extlb_http_port` (default to `30080`) on any server of the cluster
-* forward the traffic from port `443` to `extlb_https_port` (default to `30443`) on any server of the cluster
-
-This is the final result:
-
-Client -> Public L4 LB (with proxy protocol enabled) -> nginx ingress (with proxy protocol enabled) -> k8s service -> pod(s)
-
-### Cert-manager
-
-[cert-manager](https://cert-manager.io/docs/) is used to issue certificates from a variety of supported source. To use cert-manager take a look at [nginx-ingress-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-ingress-cert-manager.yml) and [nginx-configmap-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-configmap-cert-manager.yml) example. To use cert-manager and get the certificate you **need** set on your DNS configuration the public ip address of the load balancer.
 
 ## Before you start
 
@@ -310,6 +222,94 @@ Once you have created the `terraform.tfvars` file edit the `main.tf` file (alway
 | `extlb_http_port`  | `no`  | External LB HTTP listen port. Default: 80 |
 | `extlb_https_port`  | `no`  | External LB HTTPS listen port. Default 443 |
 | `expose_kubeapi`  | `no`  | Boolean value, default false. Expose or not the kubeapi server to the internet. Access is granted only from *my_public_ip_cidr* for security reasons. |
+
+## Infrastructure overview
+
+The final infrastructure will be made by:
+
+* two autoscaling group, one for the kubernetes master nodes and one for the worker nodes
+* two launch template, used by the asg
+* one internal load balancer (L4) that will route traffic to Kubernetes servers
+* one external load balancer (L4) that will route traffic to Kubernetes workers
+* one security group that will allow traffic from the VPC subnet CIDR on all the k8s ports (kube api, nginx ingress node port etc)
+* one security group that will allow traffic from all the internet into the public load balancer (L4) on port 80 and 443
+
+![k8s infra](https://garutilorenzo.github.io/images/k8s-infra.png?)
+
+## Kubernetes setup
+
+The installation of K8s id done by [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/). In this installation [Containerd](https://containerd.io/) is used as CRI and [flannel](https://github.com/flannel-io/flannel) is used as CNI.
+
+You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/).
+
+To install Nginx ingress set the variable *install_nginx_ingress* to yes (default no).
+
+### Nginx ingress controller
+
+You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) To enable the longhorn deployment set `install_nginx_ingress` variable to `true`.
+
+The installation is the [bare metal](https://kubernetes.github.io/ingress-nginx/deploy/#bare-metal-clusters) installation, the ingress controller then is exposed via a NodePort Service.
+
+```yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-controller-loadbalancer
+  namespace: ingress-nginx
+spec:
+  selector:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 443
+  type: LoadBalancer
+```
+
+To get the real ip address of the clients using a public L4 load balancer we need to use the proxy protocol feature of nginx ingress controller:
+
+```yaml
+---
+apiVersion: v1
+data:
+  allow-snippet-annotations: "true"
+  enable-real-ip: "true"
+  proxy-real-ip-cidr: "0.0.0.0/0"
+  proxy-body-size: "20m"
+  use-proxy-protocol: "true"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+    app.kubernetes.io/version: ${nginx_ingress_release}
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+```
+
+**NOTE** to use nginx ingress controller with the proxy protocol enabled, an external nginx instance is used as proxy (since OCI LB doesn't support proxy protocol at the moment). Nginx will be installed on each worker node and the configuation of nginx will:
+
+* listen in proxy protocol mode
+* forward the traffic from port `80` to `extlb_http_port` (default to `30080`) on any server of the cluster
+* forward the traffic from port `443` to `extlb_https_port` (default to `30443`) on any server of the cluster
+
+This is the final result:
+
+Client -> Public L4 LB (with proxy protocol enabled) -> nginx ingress (with proxy protocol enabled) -> k8s service -> pod(s)
+
+### Cert-manager
+
+[cert-manager](https://cert-manager.io/docs/) is used to issue certificates from a variety of supported source. To use cert-manager take a look at [nginx-ingress-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-ingress-cert-manager.yml) and [nginx-configmap-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-configmap-cert-manager.yml) example. To use cert-manager and get the certificate you **need** set on your DNS configuration the public ip address of the load balancer.
 
 ## Deploy
 
