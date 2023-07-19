@@ -129,7 +129,7 @@ EOF
 }
 
 setup_cri_amz(){
-  curl -L -o containerd-1.6.16-linux-arm64.tar.gz https://github.com/containerd/containerd/releases/download/v1.6.16/containerd-1.6.16-linux-arm64.tar.gz
+  curl -kL -o containerd-1.6.16-linux-arm64.tar.gz https://github.com/containerd/containerd/releases/download/v1.6.16/containerd-1.6.16-linux-arm64.tar.gz
   tar Cxzvf /usr/local containerd-1.6.16-linux-arm64.tar.gz
 
   render_containerd_service
@@ -137,10 +137,10 @@ setup_cri_amz(){
   systemctl daemon-reload
   systemctl enable --now containerd
 
-  curl -L -o runc.arm64 https://github.com/opencontainers/runc/releases/download/v1.1.4/runc.arm64
+  curl -kL -o runc.arm64 https://github.com/opencontainers/runc/releases/download/v1.1.4/runc.arm64
   install -m 755 runc.arm64 /usr/local/sbin/runc
 
-  curl -L -o  cni-plugins-linux-arm64-v1.2.0.tgz https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-arm64-v1.2.0.tgz
+  curl -kL -o  cni-plugins-linux-arm64-v1.2.0.tgz https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-arm64-v1.2.0.tgz
   tar Cxzvf /opt/cni/bin cni-plugins-linux-arm64-v1.2.0.tgz
 
   mkdir -p /etc/containerd
@@ -164,20 +164,20 @@ install_k8s_utils_amz(){
 }
 
 install_aws_cli(){
-  curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
+  curl -Lk "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip"
   unzip awscliv2.zip
   sudo ./aws/install
   rm -rf aws awscliv2.zip
 }
 
 setup_repos(){
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg |  gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  curl -kfsSL https://download.docker.com/linux/ubuntu/gpg |  gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
   echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
   $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-  curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
+  curl -kfsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
 
   echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
