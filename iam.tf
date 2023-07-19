@@ -116,7 +116,7 @@ resource "aws_iam_policy" "aws_efs_csi_driver_policy" {
           "elasticfilesystem:CreateAccessPoint"
         ],
         Resource = [
-          "${aws_efs_file_system.k8s_persistent_storage[0].arn}"
+          "*"
         ],
         Condition = {
           StringLike = {
@@ -127,10 +127,24 @@ resource "aws_iam_policy" "aws_efs_csi_driver_policy" {
       {
         Effect = "Allow"
         Action = [
+          "elasticfilesystem:TagResource"
+        ],
+        Resource = [
+          "*"
+        ],
+        Condition = {
+          StringLike = {
+            "aws:ResourceTag/efs.csi.aws.com/cluster" = "true"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "elasticfilesystem:DeleteAccessPoint"
         ],
         Resource = [
-          "${aws_efs_file_system.k8s_persistent_storage[0].arn}"
+          "*"
         ],
         Condition = {
           StringEquals = {
@@ -179,6 +193,15 @@ resource "aws_iam_policy" "allow_secrets_manager" {
             for tag, value in local.global_tags : "aws:ResourceTag/${tag}" => value
           }
         }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:ListSecrets"
+        ],
+        Resource = [
+          "*"
+        ],
       }
     ]
   })
