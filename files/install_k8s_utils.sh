@@ -101,13 +101,6 @@ WantedBy=multi-user.target
 EOF
 }
 
-render_config(){
-cat <<-EOF | tee /etc/modules-load.d/containerd.conf
-overlay
-br_netfilter
-EOF
-}
-
 preflight_amz(){
   yum check-update
   yum upgrade -y
