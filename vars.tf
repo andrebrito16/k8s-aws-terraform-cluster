@@ -44,14 +44,14 @@ variable "ec2_associate_public_ip_address" {
 
 ## eu-west-1
 # Ubuntu 22.04
-# ami-099b1e41f3043ce3a
+# ami-0cffefff2d52e0a23
 
 # Amazon Linux 2 AMI (HVM) - Kernel 5.10, SSD Volume Type
-# ami-0ea0f26a6d50850c5
+# ami-006be9ab6a140de6e
 
 variable "ami" {
   type    = string
-  default = "ami-099b1e41f3043ce3a"
+  default = "	ami-0cffefff2d52e0a23"
 }
 
 variable "default_instance_type" {
