@@ -208,12 +208,12 @@ Once you have created the `terraform.tfvars` file edit the `main.tf` file (alway
 | `k8s_worker_max_capacity` | `no`        | Max number of k8s workers: Default 3 |
 | `cluster_name`  | `no`  | Kubernetes cluster name. Default: k8s-cluster |
 | `install_nginx_ingress`  | `no`  | Install or not nginx ingress controller. Default: false |
-| `nginx_ingress_release`  | `no`  | Nginx ingress release to install. Default: v1.5.1|
+| `nginx_ingress_release`  | `no`  | Nginx ingress release to install. Default: v1.8.1|
 | `install_certmanager`  | `no`  | Boolean value, install [cert manager](https://cert-manager.io/) "Cloud native certificate management". Default: true  |
 | `certmanager_email_address`  | `no`  | Email address used for signing https certificates. Defaul: changeme@example.com  |
-| `certmanager_release`  | `no`  | Cert manager release. Default: v1.11.0  |
+| `certmanager_release`  | `no`  | Cert manager release. Default: v1.12.2  |
 | `efs_persistent_storage`  | `no`  | Deploy EFS for persistent sotrage  |
-| `efs_csi_driver_release`  | `no`  | EFS CSI driver Release: v1.4.2   |
+| `efs_csi_driver_release`  | `no`  | EFS CSI driver Release: v1.5.8   |
 | `extlb_listener_http_port`  | `no`  | HTTP nodeport where nginx ingress controller will listen. Default: 30080 |
 | `extlb_listener_https_port`  | `no`  | HTTPS nodeport where nginx ingress controller will listen. Default 30443 |
 | `extlb_http_port`  | `no`  | External LB HTTP listen port. Default: 80 |
@@ -230,8 +230,11 @@ The final infrastructure will be made by:
 * one external load balancer (L4) that will route traffic to Kubernetes workers
 * one security group that will allow traffic from the VPC subnet CIDR on all the k8s ports (kube api, nginx ingress node port etc)
 * one security group that will allow traffic from all the internet into the public load balancer (L4) on port 80 and 443
+* four secrets that will store k8s join tokens
 
-![k8s infra](https://garutilorenzo.github.io/images/k8s-infra.png?)
+Optional resources:
+
+* EFS storage to persist data
 
 ## Kubernetes setup
 
