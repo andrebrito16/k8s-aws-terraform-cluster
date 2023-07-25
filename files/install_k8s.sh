@@ -3,7 +3,7 @@
 render_kubeinit(){
 
 HOSTNAME=$(hostname)
-ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
+ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | grep -Po '(?<=src )(\S+)')
 
 cat <<-EOF > /root/kubeadm-init-config.yaml
 ---
@@ -19,7 +19,7 @@ bootstrapTokens:
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: $ADVERTISE_ADDR
-  bindPort: ${kube_api_port }
+  bindPort: ${kube_api_port}
 nodeRegistration:
   criSocket: /run/containerd/containerd.sock
   imagePullPolicy: IfNotPresent
@@ -28,15 +28,21 @@ nodeRegistration:
 ---
 apiServer:
   timeoutForControlPlane: 4m0s
+  certSANs:
+    - $HOSTNAME
+    - $ADVERTISE_ADDR
+    %{~ if expose_kubeapi ~}
+    - ${k8s_tls_san_public}
+    %{~ endif ~}
 apiVersion: kubeadm.k8s.io/v1beta3
 certificatesDir: /etc/kubernetes/pki
 clusterName: kubernetes
 controllerManager: {}
 dns: {}
-imageRepository: k8s.gcr.io
+imageRepository: registry.k8s.io
 kind: ClusterConfiguration
 kubernetesVersion: ${k8s_version}
-controlPlaneEndpoint: ${control_plane_url}:${kube_api_port }
+controlPlaneEndpoint: ${control_plane_url}:${kube_api_port}
 networking:
   dnsDomain: ${k8s_dns_domain}
   podSubnet: ${k8s_pod_subnet}
@@ -52,11 +58,41 @@ cgroupDriver: systemd
 EOF
 }
 
-wait_for_s3_object(){
-  until aws s3 ls s3://${s3_bucket_name}/ca.txt 
+wait_lb() {
+while [ true ]
+do
+  curl --output /dev/null --silent -k https://${control_plane_url}:${kube_api_port}
+  if [[ "$?" -eq 0 ]]; then
+    break
+  fi
+  sleep 5
+  echo "wait for LB"
+done
+}
+
+wait_for_ca_secret(){
+  res_ca=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_ca" || "$res_ca" == "${default_secret_placeholder}" ]]
   do
-      echo "Waiting the ca hash ..."
-      sleep 10
+    echo "Waiting the ca hash ..."
+    res_ca=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+
+  res_cert=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_cert_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_cert" || "$res_cert" == "${default_secret_placeholder}" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res_cert=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_cert_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+
+  res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
+  while [[ -z "$res_token" || "$res_token" == "${default_secret_placeholder}" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res_token=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
+    sleep 1
   done
 }
 
@@ -68,7 +104,7 @@ wait_for_pods(){
 }
 
 wait_for_masters(){
-  until kubectl get nodes -o wide | grep 'control-plane,master'; do
+  until kubectl get nodes -o wide | grep 'control-plane'; do
     echo 'Waiting for k8s control-planes'
     sleep 5
   done
@@ -86,10 +122,10 @@ setup_env(){
 render_kubejoin(){
 
 HOSTNAME=$(hostname)
-ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')
-CA_HASH=$(aws s3 cp s3://${s3_bucket_name}/ca.txt -)
-KUBEADM_CERT=$(aws s3 cp s3://${s3_bucket_name}/kubeadm_cert.txt -)
-KUBEADM_TOKEN=$(aws s3 cp s3://${s3_bucket_name}/kubeadm_token.txt -)
+ADVERTISE_ADDR=$(ip -o route get to 8.8.8.8 | grep -Po '(?<=src )(\S+)')
+CA_HASH=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+KUBEADM_CERT=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_cert_secret_name} | jq -r .SecretString)
+KUBEADM_TOKEN=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_token_secret_name} | jq -r .SecretString)
 
 cat <<-EOF > /root/kubeadm-join-master.yaml
 ---
@@ -119,17 +155,11 @@ EOF
 }
 
 render_nginx_config(){
-cat <<-EOF > /root/nginx-ingress-config.yaml
+cat << 'EOF' > "$NGINX_RESOURCES_FILE"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    app.kubernetes.io/component: controller
-    app.kubernetes.io/instance: ingress-nginx
-    app.kubernetes.io/name: ingress-nginx
-    app.kubernetes.io/part-of: ingress-nginx
-    app.kubernetes.io/version: 1.1.3
   name: ingress-nginx-controller
   namespace: ingress-nginx
 spec:
@@ -155,33 +185,129 @@ spec:
 apiVersion: v1
 data:
   allow-snippet-annotations: "true"
-  use-forwarded-headers: "true"
-  compute-full-forwarded-for: "true"
   enable-real-ip: "true"
-  forwarded-for-header: "X-Forwarded-For"
   proxy-real-ip-cidr: "0.0.0.0/0"
+  proxy-body-size: "20m"
+  use-proxy-protocol: "true"
 kind: ConfigMap
 metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/instance: ingress-nginx
-    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/part-of: ingress-nginx
-    app.kubernetes.io/version: 1.1.1
-    helm.sh/chart: ingress-nginx-4.0.16
+    app.kubernetes.io/version: ${nginx_ingress_release}
   name: ingress-nginx-controller
   namespace: ingress-nginx
 EOF
+}
+
+install_and_configure_nginx(){
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${nginx_ingress_release}/deploy/static/provider/baremetal/deploy.yaml
+  NGINX_RESOURCES_FILE=/root/nginx-ingress-resources.yaml
+  render_nginx_config
+  kubectl apply -f $NGINX_RESOURCES_FILE
+}
+
+render_staging_issuer(){
+STAGING_ISSUER_RESOURCE=$1
+cat << 'EOF' > "$STAGING_ISSUER_RESOURCE"
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+ name: letsencrypt-staging
+ namespace: cert-manager
+spec:
+ acme:
+   # The ACME server URL
+   server: https://acme-staging-v02.api.letsencrypt.org/directory
+   # Email address used for ACME registration
+   email: ${certmanager_email_address}
+   # Name of a secret used to store the ACME account private key
+   privateKeySecretRef:
+     name: letsencrypt-staging
+   # Enable the HTTP-01 challenge provider
+   solvers:
+   - http01:
+       ingress:
+         class:  nginx
+EOF
+}
+
+render_prod_issuer(){
+PROD_ISSUER_RESOURCE=$1
+cat << 'EOF' > "$PROD_ISSUER_RESOURCE"
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  namespace: cert-manager
+spec:
+  acme:
+    # The ACME server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: ${certmanager_email_address}
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    # Enable the HTTP-01 challenge provider
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+}
+
+install_and_configure_certmanager(){
+  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/${certmanager_release}/cert-manager.yaml
+  render_staging_issuer /root/staging_issuer.yaml
+  render_prod_issuer /root/prod_issuer.yaml
+
+  # Wait cert-manager to be ready
+  until kubectl get pods -n cert-manager | grep 'Running'; do
+    echo 'Waiting for cert-manager to be ready'
+    sleep 15
+  done
+
+  kubectl create -f /root/prod_issuer.yaml
+  kubectl create -f /root/staging_issuer.yaml
+}
+
+install_and_configure_csi_driver(){
+  git clone https://github.com/kubernetes-sigs/aws-efs-csi-driver.git
+  cd aws-efs-csi-driver/
+  git checkout tags/${efs_csi_driver_release} -b kube_deploy_${efs_csi_driver_release}
+  kubectl apply -k deploy/kubernetes/overlays/stable/
+
+  # Uncomment this to mount the EFS share on the first k8s-server node
+  # mkdir /efs
+  # aws_region="$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
+  # mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${efs_filesystem_id}.efs.$aws_region.amazonaws.com:/ /efs
 }
 
 k8s_join(){
   kubeadm join --config /root/kubeadm-join-master.yaml
   mkdir ~/.kube
   cp /etc/kubernetes/admin.conf ~/.kube/config
+
+  # Upload kubeconfig on AWS secret manager
+  cat ~/.kube/config | sed 's/server: https:\/\/127.0.0.1:6443/server: https:\/\/${control_plane_url}:${kube_api_port}/' > /root/kube.conf
+  aws secretsmanager update-secret --secret-id ${kubeconfig_secret_name} --secret-string file:///root/kube.conf
 }
 
-generate_s3_object(){
+wait_for_secretsmanager(){
+  res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+  while [[ -z "$res" ]]
+  do
+    echo "Waiting the ca hash ..."
+    res=$(aws secretsmanager get-secret-value --secret-id ${kubeadm_ca_secret_name} | jq -r .SecretString)
+    sleep 1
+  done
+}
+
+generate_secrets(){
+  wait_for_secretsmanager
   HASH=$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //')
   echo $HASH > /tmp/ca.txt
 
@@ -191,9 +317,9 @@ generate_s3_object(){
   CERT=$(kubeadm init phase upload-certs --upload-certs | tail -n 1)
   echo $CERT > /tmp/kubeadm_cert.txt
 
-  aws s3 cp /tmp/ca.txt s3://${s3_bucket_name}/ca.txt
-  aws s3 cp /tmp/kubeadm_cert.txt s3://${s3_bucket_name}/kubeadm_cert.txt
-  aws s3 cp /tmp/kubeadm_token.txt s3://${s3_bucket_name}/kubeadm_token.txt
+  aws secretsmanager update-secret --secret-id ${kubeadm_ca_secret_name} --secret-string file:///tmp/ca.txt
+  aws secretsmanager update-secret --secret-id ${kubeadm_cert_secret_name} --secret-string file:///tmp/kubeadm_cert.txt
+  aws secretsmanager update-secret --secret-id ${kubeadm_token_secret_name} --secret-string file:///tmp/kubeadm_token.txt
 }
 
 k8s_init(){
@@ -203,34 +329,41 @@ k8s_init(){
 }
 
 setup_cni(){
-  kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+  until kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml; do
+    echo "Trying to install CNI flannel"
+  done
 }
 
 first_instance=$(aws ec2 describe-instances --filters Name=tag-value,Values=k8s-server Name=instance-state-name,Values=running --query 'sort_by(Reservations[].Instances[], &LaunchTime)[:-1].[InstanceId]' --output text | head -n1)
 instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-control_plane_status=$(curl -o /dev/null -L -k -s -w '%%{http_code}' https://${control_plane_url}:${kube_api_port})
 
-if [[ "$first_instance" == "$instance_id" ]] && [[ "$control_plane_status" -ne 403 ]]; then
+if [[ "$first_instance" == "$instance_id" ]]; then
   render_kubeinit
   k8s_init
   setup_env
   wait_for_pods
   setup_cni
-  generate_s3_object
+  generate_secrets
   echo "Wait 180 seconds for control-planes to join"
   sleep 180
   wait_for_masters
   %{ if install_nginx_ingress }
-  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
-  render_nginx_config
-  kubectl apply -f /root/nginx-ingress-config.yaml
+  install_and_configure_nginx
   %{ endif }
-  %{ if install_longhorn }
-  kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/${longhorn_release}/deploy/longhorn.yaml
-  kubectl create -f https://raw.githubusercontent.com/longhorn/longhorn/${longhorn_release}/examples/storageclass.yaml
+  %{ if install_certmanager }
+  install_and_configure_certmanager
+  %{ endif }
+  %{ if efs_persistent_storage }
+  install_and_configure_csi_driver
+  %{ endif }
+  %{ if install_node_termination_handler }
+  #Install node termination handler
+  echo 'Install node termination handler'
+  kubectl apply -f https://github.com/aws/aws-node-termination-handler/releases/download/${node_termination_handler_release}/all-resources.yaml
   %{ endif }
 else
-  wait_for_s3_object
+  wait_for_ca_secret
   render_kubejoin
+  wait_lb
   k8s_join
 fi

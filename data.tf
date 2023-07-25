@@ -2,6 +2,10 @@ data "aws_iam_policy" "AmazonEC2ReadOnlyAccess" {
   arn = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
 }
 
+data "aws_iam_policy" "AmazonSSMManagedInstanceCore" {
+  arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 data "template_cloudinit_config" "k8s_server" {
   gzip          = true
   base64_encode = true
@@ -14,25 +18,40 @@ data "template_cloudinit_config" "k8s_server" {
 
   part {
     content_type = "text/x-shellscript"
-    content      = templatefile("${path.module}/files/install_k8s_utils.sh", { k8s_version = var.k8s_version, install_longhorn = var.install_longhorn, })
+    content = templatefile("${path.module}/files/install_k8s_utils.sh", {
+      k8s_version = var.k8s_version
+    })
   }
 
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/install_k8s.sh", {
-      is_k8s_server             = true,
-      k8s_version               = var.k8s_version,
-      k8s_dns_domain            = var.k8s_dns_domain,
-      k8s_pod_subnet            = var.k8s_pod_subnet,
-      k8s_service_subnet        = var.k8s_service_subnet,
-      s3_bucket_name            = var.s3_bucket_name,
-      kube_api_port             = var.kube_api_port,
-      control_plane_url         = aws_lb.k8s-server-lb.dns_name,
-      install_longhorn          = var.install_longhorn,
-      longhorn_release          = var.longhorn_release,
-      install_nginx_ingress     = var.install_nginx_ingress,
-      extlb_listener_http_port  = var.extlb_listener_http_port,
-      extlb_listener_https_port = var.extlb_listener_https_port,
+      is_k8s_server                    = true,
+      k8s_version                      = var.k8s_version,
+      k8s_dns_domain                   = var.k8s_dns_domain,
+      k8s_pod_subnet                   = var.k8s_pod_subnet,
+      k8s_service_subnet               = var.k8s_service_subnet,
+      kubeadm_ca_secret_name           = local.kubeadm_ca_secret_name,
+      kubeadm_token_secret_name        = local.kubeadm_token_secret_name,
+      kubeadm_cert_secret_name         = local.kubeadm_cert_secret_name,
+      kubeconfig_secret_name           = local.kubeconfig_secret_name,
+      kube_api_port                    = var.kube_api_port,
+      control_plane_url                = aws_lb.k8s_server_lb.dns_name,
+      install_nginx_ingress            = var.install_nginx_ingress,
+      nginx_ingress_release            = var.nginx_ingress_release,
+      efs_persistent_storage           = var.efs_persistent_storage,
+      efs_csi_driver_release           = var.efs_csi_driver_release,
+      efs_filesystem_id                = var.efs_persistent_storage ? aws_efs_file_system.k8s_persistent_storage[0].id : "",
+      install_certmanager              = var.install_certmanager,
+      certmanager_release              = var.certmanager_release,
+      install_node_termination_handler = var.install_node_termination_handler,
+      node_termination_handler_release = var.node_termination_handler_release,
+      certmanager_email_address        = var.certmanager_email_address,
+      extlb_listener_http_port         = var.extlb_listener_http_port,
+      extlb_listener_https_port        = var.extlb_listener_https_port,
+      default_secret_placeholder       = var.default_secret_placeholder,
+      expose_kubeapi                   = var.expose_kubeapi,
+      k8s_tls_san_public               = local.k8s_tls_san_public
     })
   }
 }
@@ -49,16 +68,21 @@ data "template_cloudinit_config" "k8s_worker" {
 
   part {
     content_type = "text/x-shellscript"
-    content      = templatefile("${path.module}/files/install_k8s_utils.sh", { k8s_version = var.k8s_version, install_longhorn = var.install_longhorn })
+    content = templatefile("${path.module}/files/install_k8s_utils.sh", {
+      k8s_version = var.k8s_version
+    })
   }
 
   part {
     content_type = "text/x-shellscript"
     content = templatefile("${path.module}/files/install_k8s_worker.sh", {
-      is_k8s_server     = false,
-      s3_bucket_name    = var.s3_bucket_name,
-      kube_api_port     = var.kube_api_port,
-      control_plane_url = aws_lb.k8s-server-lb.dns_name,
+      is_k8s_server              = false,
+      kubeadm_ca_secret_name     = local.kubeadm_ca_secret_name,
+      kubeadm_token_secret_name  = local.kubeadm_token_secret_name,
+      kubeadm_cert_secret_name   = local.kubeadm_cert_secret_name,
+      kube_api_port              = var.kube_api_port,
+      control_plane_url          = aws_lb.k8s_server_lb.dns_name,
+      default_secret_placeholder = var.default_secret_placeholder,
     })
   }
 }
@@ -70,11 +94,7 @@ data "aws_instances" "k8s_servers" {
   ]
 
   instance_tags = {
-    k8s-instance-type = "k8s-server"
-    provisioner       = "terraform"
-    environment       = var.environment
-    uuid              = var.uuid
-    scope             = "k8s-cluster"
+    for tag, value in merge(local.global_tags, { k8s-instance-type = "k8s-server" }) : tag => value
   }
 
   instance_state_names = ["running"]
@@ -87,11 +107,7 @@ data "aws_instances" "k8s_workers" {
   ]
 
   instance_tags = {
-    k8s-instance-type = "k8s-worker"
-    provisioner       = "terraform"
-    environment       = var.environment
-    uuid              = var.uuid
-    scope             = "k8s-cluster"
+    for tag, value in merge(local.global_tags, { k8s-instance-type = "k8s-worker" }) : tag => value
   }
 
   instance_state_names = ["running"]

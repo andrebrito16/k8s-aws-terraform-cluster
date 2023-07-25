@@ -2,10 +2,6 @@ variable "environment" {
   type = string
 }
 
-variable "uuid" {
-  type = string
-}
-
 variable "ssk_key_pair_name" {
   type = string
 }
@@ -13,6 +9,11 @@ variable "ssk_key_pair_name" {
 variable "vpc_id" {
   type        = string
   description = "The vpc id"
+}
+
+variable "my_public_ip_cidr" {
+  type        = string
+  description = "My public ip CIDR"
 }
 
 variable "vpc_private_subnets" {
@@ -30,60 +31,49 @@ variable "vpc_subnet_cidr" {
   description = "VPC subnet CIDR"
 }
 
+variable "common_prefix" {
+  type        = string
+  description = ""
+  default     = "k8s"
+}
+
 variable "ec2_associate_public_ip_address" {
   type    = bool
   default = false
 }
 
-variable "s3_bucket_name" {
-  type    = string
-  default = "my-very-secure-k8s-bucket"
-}
+## eu-west-1
+# Ubuntu 22.04
+# ami-0cffefff2d52e0a23
 
-variable "instance_profile_name" {
-  type    = string
-  default = "K8sInstanceProfile"
-}
-
-variable "iam_role_name" {
-  type    = string
-  default = "K8sIamRole"
-}
+# Amazon Linux 2 AMI (HVM) - Kernel 5.10, SSD Volume Type
+# ami-006be9ab6a140de6e
 
 variable "ami" {
   type    = string
-  default = "ami-0a2616929f1e63d91"
+  default = "	ami-0cffefff2d52e0a23"
 }
 
 variable "default_instance_type" {
-  type    = string
-  default = "t3.large"
+  type        = string
+  default     = "t3.medium"
+  description = "Instance type to be used"
 }
 
 variable "instance_types" {
   description = "List of instance types to use"
   type        = map(string)
   default = {
-    asg_instance_type_1 = "t3.large"
-    asg_instance_type_2 = "t2.large"
-    asg_instance_type_3 = "m4.large"
-    asg_instance_type_4 = "t3a.large"
+    asg_instance_type_1 = "t3.medium"
+    asg_instance_type_2 = "t3a.medium"
+    asg_instance_type_3 = "c5a.large"
+    asg_instance_type_4 = "c6a.large"
   }
-}
-
-variable "k8s_master_template_prefix" {
-  type    = string
-  default = "k8s_master_tpl"
-}
-
-variable "k8s_worker_template_prefix" {
-  type    = string
-  default = "k8s_worker_tpl"
 }
 
 variable "k8s_version" {
   type    = string
-  default = "1.23.5"
+  default = "1.27.3"
 }
 
 variable "k8s_pod_subnet" {
@@ -105,11 +95,6 @@ variable "kube_api_port" {
   type        = number
   default     = 6443
   description = "Kubeapi Port"
-}
-
-variable "k8s_internal_lb_name" {
-  type    = string
-  default = "k8s-server-tcp-lb"
 }
 
 variable "k8s_server_desired_capacity" {
@@ -154,36 +139,46 @@ variable "cluster_name" {
   description = "Cluster name"
 }
 
-
-variable "PATH_TO_PUBLIC_LB_CERT" {
-  type        = string
-  description = "Path to the public LB https certificate"
-}
-
-variable "PATH_TO_PUBLIC_LB_KEY" {
-  type        = string
-  description = "Path to the public LB key"
-}
-
-variable "install_longhorn" {
-  type    = bool
-  default = false
-}
-
-variable "longhorn_release" {
-  type    = string
-  default = "v1.2.3"
-}
-
 variable "install_nginx_ingress" {
   type        = bool
   default     = false
   description = "Create external LB true/false"
 }
 
-variable "k8s_ext_lb_name" {
+variable "nginx_ingress_release" {
   type    = string
-  default = "k8s-ext-lb"
+  default = "v1.8.1"
+}
+
+variable "install_certmanager" {
+  type    = bool
+  default = false
+}
+
+variable "certmanager_release" {
+  type    = string
+  default = "v1.12.2"
+}
+
+variable "certmanager_email_address" {
+  type    = string
+  default = "changeme@example.com"
+}
+
+variable "create_extlb" {
+  type        = bool
+  default     = false
+  description = "Create external LB true/false"
+}
+
+variable "efs_persistent_storage" {
+  type    = bool
+  default = false
+}
+
+variable "efs_csi_driver_release" {
+  type    = string
+  default = "v1.5.8"
 }
 
 variable "extlb_listener_http_port" {
@@ -204,4 +199,24 @@ variable "extlb_http_port" {
 variable "extlb_https_port" {
   type    = number
   default = 443
+}
+
+variable "default_secret_placeholder" {
+  type    = string
+  default = "DEFAULTPLACEHOLDER"
+}
+
+variable "expose_kubeapi" {
+  type    = bool
+  default = false
+}
+
+variable "install_node_termination_handler" {
+  type    = bool
+  default = true
+}
+
+variable "node_termination_handler_release" {
+  type    = string
+  default = "v1.20.0"
 }

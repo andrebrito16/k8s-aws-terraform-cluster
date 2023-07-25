@@ -17,16 +17,22 @@ The scope of this repo is to show all the AWS components needed to deploy a high
 
 # Table of Contents
 
-* [Requirements](#requirements)
-* [Infrastructure overview](#infrastructure-overview)
-* [Before you start](#before-you-start)
-* [Project setup](#project-setup)
-* [AWS provider setup](#aws-provider-setup)
-* [Pre flight checklist](#pre-flight-checklist)
-* [Deploy](#deploy)
-* [Deploy a sample stack](#deploy-a-sample-stack)
-* [Clean up](#clean-up)
-* [Todo](#todo)
+- [Deploy Kubernetes on Amazon AWS](#deploy-kubernetes-on-amazon-aws)
+- [Table of Contents](#table-of-contents)
+  - [Requirements](#requirements)
+  - [Before you start](#before-you-start)
+  - [Project setup](#project-setup)
+  - [AWS provider setup](#aws-provider-setup)
+  - [Pre flight checklist](#pre-flight-checklist)
+  - [Infrastructure overview](#infrastructure-overview)
+  - [Kubernetes setup](#kubernetes-setup)
+    - [Nginx ingress controller](#nginx-ingress-controller)
+    - [Cert manager](#cert-manager)
+  - [Deploy](#deploy)
+    - [Public LB check](#public-lb-check)
+  - [Deploy a sample stack](#deploy-a-sample-stack)
+  - [Clean up](#clean-up)
+  - [Todo](#todo)
 
 ## Requirements
 
@@ -39,35 +45,8 @@ You need also:
 
 * one VPC with private and public subnets
 * one ssh key already uploaded on your AWS account
-* one bastion host to reach all the private EC2 instances
 
-For VPC and bastion host you can refer to [this](https://github.com/garutilorenzo/aws-terraform-examples) repository.
-
-## Infrastructure overview
-
-The final infrastructure will be made by:
-
-* two autoscaling group, one for the kubernetes master nodes and one for the worker nodes
-* two launch template, used by the asg
-* one internal load balancer (L4) that will route traffic to Kubernetes servers
-* one external load balancer (L7) that will route traffic to Kubernetes workers
-* one security group that will allow traffic from the VPC subnet CIDR on all the k8s ports (kube api, nginx ingress node port etc)
-* one security group that will allow traffic from all the internet into the public load balancer (L7) on port 80 and 443
-* one S3 bucket, used to store the cluster join certificates
-* one IAM role, used to allow all the EC2 instances in the cluster to write on the S3 bucket, used to share the join certificates
-* one certificate used by the public LB, stored on AWS ACM. The certificate is a self signed certificate.
-
-![k8s infra](https://garutilorenzo.github.io/images/k8s-infra.png?)
-
-## Kubernetes setup
-
-The installation of K8s id done by [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/). In this installation [Containerd](https://containerd.io/) is used as CRI and [flannel](https://github.com/flannel-io/flannel) is used as CNI.
-
-You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) and [Longhorn](#https://longhorn.io/).
-
-To install Nginx ingress set the variable *install_nginx_ingress* to yes (default no). To install longhorn set the variable *install_longhorn* to yes (default no). **NOTE** if you don't install the nginx ingress, the public Load Balancer and the SSL certificate won't be deployed.
-
-In this installation is used a S3 bucket to store the join certificate/token. At the first startup of the instance, if the cluster does not exist, the S3 bucket is used to get the join certificates/token.
+For VPC you can refer to [this](https://github.com/garutilorenzo/aws-terraform-examples) repository.
 
 ## Before you start
 
@@ -82,13 +61,13 @@ git clone https://github.com/garutilorenzo/k8s-aws-terraform-cluster
 cd k8s-aws-terraform-cluster/example/
 ```
 
-Now you have to edit the main.tf file and you have to create the terraform.tfvars file. For more detail see [AWS provider setup](#aws-provider-setup) and [Pre flight checklist](#pre-flight-checklist).
+Now you have to edit the `main.tf` file and you have to create the `terraform.tfvars` file. For more detail see [AWS provider setup](#aws-provider-setup) and [Pre flight checklist](#pre-flight-checklist).
 
 Or if you prefer you can create an new empty directory in your workspace and create this three files:
 
-* terraform.tfvars
-* main.tf
-* provider.tf
+* `terraform.tfvars`
+* `main.tf`
+* `provider.tf`
 
 The main.tf file will look like:
 
@@ -111,14 +90,11 @@ variable "AWS_REGION" {
 
 module "k8s-cluster" {
   ssk_key_pair_name      = "<SSH_KEY_NAME>"
-  uuid                   = "<GENERATE_UUID>"
   environment            = var.environment
   vpc_id                 = "<VPC_ID>"
   vpc_private_subnets    = "<PRIVATE_SUBNET_LIST>"
   vpc_public_subnets     = "<PUBLIC_SUBNET_LIST>"
   vpc_subnet_cidr        = "<SUBNET_CIDR>"
-  PATH_TO_PUBLIC_LB_CERT = "<PAHT_TO_PUBLIC_LB_CERT>"
-  PATH_TO_PUBLIC_LB_KEY  = "<PAHT_TO_PRIVATE_LB_CERT>"
   install_nginx_ingress  = true
   source                 = "github.com/garutilorenzo/k8s-aws-terraform-cluster"
 }
@@ -138,7 +114,7 @@ output "k8s_workers_private_ips" {
 
 For all the possible variables see [Pre flight checklist](#pre-flight-checklist)
 
-The provider.tf will look like:
+The `provider.tf` will look like:
 
 ```
 provider "aws" {
@@ -148,7 +124,7 @@ provider "aws" {
 }
 ```
 
-The terraform.tfvars will look like:
+The `terraform.tfvars` will look like:
 
 ```
 AWS_ACCESS_KEY = "xxxxxxxxxxxxxxxxx"
@@ -189,73 +165,10 @@ rerun this command to reinitialize your working directory. If you forget, other
 commands will detect it and remind you to do so if necessary.
 ```
 
-### Generate self signed SSL certificate for the public LB (L7)
-
-**NOTE** If you already own a valid certificate skip this step and set the correct values for the variables: PATH_TO_PUBLIC_LB_CERT and PATH_TO_PUBLIC_LB_KEY
-
-We need to generate the certificates (sel signed) for our public load balancer (Layer 7). To do this we need *openssl*, open a terminal and follow this step:
-
-Generate the key:
-
-```
-openssl genrsa 2048 > privatekey.pem
-Generating RSA private key, 2048 bit long modulus (2 primes)
-.......+++++
-...............+++++
-e is 65537 (0x010001)
-```
-
-Generate the a new certificate request:
-
-```
-openssl req -new -key privatekey.pem -out csr.pem
-You are about to be asked to enter information that will be incorporated
-into your certificate request.
-What you are about to enter is what is called a Distinguished Name or a DN.
-There are quite a few fields but you can leave some blank
-For some fields there will be a default value,
-If you enter '.', the field will be left blank.
------
-Country Name (2 letter code) [AU]:IT
-State or Province Name (full name) [Some-State]:Italy
-Locality Name (eg, city) []:Brescia
-Organization Name (eg, company) [Internet Widgits Pty Ltd]:GL Ltd
-Organizational Unit Name (eg, section) []:IT
-Common Name (e.g. server FQDN or YOUR name) []:testlb.domainexample.com
-Email Address []:email@you.com
-
-Please enter the following 'extra' attributes
-to be sent with your certificate request
-A challenge password []:
-An optional company name []:
-```
-
-Generate the public CRT:
-
-```
-openssl x509 -req -days 365 -in csr.pem -signkey privatekey.pem -out public.crt
-Signature ok
-subject=C = IT, ST = Italy, L = Brescia, O = GL Ltd, OU = IT, CN = testlb.domainexample.com, emailAddress = email@you.com
-Getting Private key
-```
-
-This is the final result:
-
-```
-ls
-
-csr.pem  privatekey.pem  public.crt
-```
-
-Now set the variables:
-
-* PATH_TO_PUBLIC_LB_CERT: ~/full_path/public.crt
-* PATH_TO_PUBLIC_LB_KEY: ~/full_path/privatekey.pem
-
 ## AWS provider setup
 
 Follow the prerequisites step on [this](https://learn.hashicorp.com/tutorials/terraform/aws-build?in=terraform/aws-get-started) link.
-In your workspace folder or in the examples directory of this repo create a file named terraform.tfvars:
+In your workspace folder or in the examples directory of this repo create a file named `terraform.tfvars`:
 
 ```
 AWS_ACCESS_KEY = "xxxxxxxxxxxxxxxxx"
@@ -264,35 +177,29 @@ AWS_SECRET_KEY = "xxxxxxxxxxxxxxxxx"
 
 ## Pre flight checklist
 
-Once you have created the terraform.tfvars file edit the main.tf file (always in the example/ directory) and set the following variables:
+Once you have created the `terraform.tfvars` file edit the `main.tf` file (always in the example/ directory) and set the following variables:
 
 | Var   | Required | Desc |
 | ------- | ------- | ----------- |
 | `region`       | `yes`       | set the correct OCI region based on your needs  |
 | `environment`  | `yes`  | Current work environment (Example: staging/dev/prod). This value is used for tag all the deployed resources |
-| `uuid`  | `yes`  | UUID used to tag all resources |
 | `ssk_key_pair_name`  | `yes`  | Name of the ssh key to use |
+| `my_public_ip_cidr` | `yes`        |  your public ip in cidr format (Example: 195.102.xxx.xxx/32) |
 | `vpc_id`  | `yes`  |  ID of the VPC to use. You can find your vpc_id in your AWS console (Example: vpc-xxxxx) |
 | `vpc_private_subnets`  | `yes`  |  List of private subnets to use. This subnets are used for the public LB You can find the list of your vpc subnets in your AWS console (Example: subnet-xxxxxx) |
 | `vpc_public_subnets`   | `yes`  |  List of public subnets to use. This subnets are used for the EC2 instances and the private LB. You can find the list of your vpc subnets in your AWS console (Example: subnet-xxxxxx) |
 | `vpc_subnet_cidr`  | `yes`  |  Your subnet CIDR. You can find the VPC subnet CIDR in your AWS console (Example: 172.31.0.0/16) |
-| `PATH_TO_PUBLIC_LB_CERT`  | `yes`  | Path to the public LB certificate. See [how to](#generate-self-signed-ssl-certificate-for-the-public-lb-l7) generate the certificate |
-| `PATH_TO_PUBLIC_LB_KEY`  | `yes`  | Path to the public LB key. See [how to](#generate-self-signed-ssl-certificate-for-the-public-lb-l7) generate the key |
+| `common_prefix`  | `no`  | Prefix used in all resource names/tags. Default: k8s |
 | `ec2_associate_public_ip_address`  | `no`  |  Assign or not a pulic ip to the EC2 instances. Default: false |
-| `s3_bucket_name`  | `no`  |  S3 bucket name used for sharing the kubernetes token used for joining the cluster. Default: my-very-secure-k8s-bucket |
 | `instance_profile_name`  | `no`  | Instance profile name. Default: K8sInstanceProfile |
-| `iam_role_name`  | `no`  | IAM role name. Default: K8sIamRole |
 | `ami`  | `no`  | Ami image name. Default: ami-0a2616929f1e63d91, ubuntu 20.04 |
 | `default_instance_type`  | `no`  | Default instance type used by the Launch template. Default: t3.large |
 | `instance_types`  | `no`  | Array of instances used by the ASG. Dfault: { asg_instance_type_1 = "t3.large", asg_instance_type_3 = "m4.large", asg_instance_type_4 = "t3a.large" } |
-| `k8s_master_template_prefix`  | `no`  | Template prefix for the master instances. Default: k8s_master_tpl |
-| `k8s_worker_template_prefix`  | `no`  | Template prefix for the worker instances. Default: k8s_worker_tpl  |
 | `k8s_version`  | `no`  | Kubernetes version to install  |
 | `k8s_pod_subnet`  | `no`  | Kubernetes pod subnet managed by the CNI (Flannel). Default: 10.244.0.0/16 |
 | `k8s_service_subnet`  | `no`  | Kubernetes pod service managed by the CNI (Flannel). Default: 10.96.0.0/12 |
 | `k8s_dns_domain`  | `no`  | Internal kubernetes DNS domain. Default: cluster.local |
 | `kube_api_port`  | `no`  | Kubernetes api port. Default: 6443 |
-| `k8s_internal_lb_name`  | `no`  | Internal load balancer name. Default: k8s-server-tcp-lb |
 | `k8s_server_desired_capacity` | `no`        | Desired number of k8s servers. Default 3 |
 | `k8s_server_min_capacity` | `no`        | Min number of k8s servers: Default 4 |
 | `k8s_server_max_capacity` | `no`        |  Max number of k8s servers: Default 3 |
@@ -300,14 +207,113 @@ Once you have created the terraform.tfvars file edit the main.tf file (always in
 | `k8s_worker_min_capacity` | `no`        | Min number of k8s workers: Default 4 |
 | `k8s_worker_max_capacity` | `no`        | Max number of k8s workers: Default 3 |
 | `cluster_name`  | `no`  | Kubernetes cluster name. Default: k8s-cluster |
-| `install_longhorn`  | `no`  | Install or not longhorn. Default: false |
-| `longhorn_release`  | `no`  | longhorn release. Default: v1.2.3 |
 | `install_nginx_ingress`  | `no`  | Install or not nginx ingress controller. Default: false |
-| `k8s_ext_lb_name`  | `no`  | External load balancer name. Default: k8s-ext-lb |
+| `nginx_ingress_release`  | `no`  | Nginx ingress release to install. Default: v1.8.1|
+| `install_certmanager`  | `no`  | Boolean value, install [cert manager](https://cert-manager.io/) "Cloud native certificate management". Default: true  |
+| `certmanager_email_address`  | `no`  | Email address used for signing https certificates. Defaul: changeme@example.com  |
+| `certmanager_release`  | `no`  | Cert manager release. Default: v1.12.2  |
+| `efs_persistent_storage`  | `no`  | Deploy EFS for persistent sotrage  |
+| `efs_csi_driver_release`  | `no`  | EFS CSI driver Release: v1.5.8   |
 | `extlb_listener_http_port`  | `no`  | HTTP nodeport where nginx ingress controller will listen. Default: 30080 |
 | `extlb_listener_https_port`  | `no`  | HTTPS nodeport where nginx ingress controller will listen. Default 30443 |
 | `extlb_http_port`  | `no`  | External LB HTTP listen port. Default: 80 |
 | `extlb_https_port`  | `no`  | External LB HTTPS listen port. Default 443 |
+| `expose_kubeapi`  | `no`  | Boolean value, default false. Expose or not the kubeapi server to the internet. Access is granted only from *my_public_ip_cidr* for security reasons. |
+
+## Infrastructure overview
+
+The final infrastructure will be made by:
+
+* two autoscaling group, one for the kubernetes master nodes and one for the worker nodes
+* two launch template, used by the asg
+* one internal load balancer (L4) that will route traffic to Kubernetes servers
+* one external load balancer (L4) that will route traffic to Kubernetes workers
+* one security group that will allow traffic from the VPC subnet CIDR on all the k8s ports (kube api, nginx ingress node port etc)
+* one security group that will allow traffic from all the internet into the public load balancer (L4) on port 80 and 443
+* four secrets that will store k8s join tokens
+
+Optional resources:
+
+* EFS storage to persist data
+
+## Kubernetes setup
+
+The installation of K8s id done by [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/). In this installation [Containerd](https://containerd.io/) is used as CRI and [flannel](https://github.com/flannel-io/flannel) is used as CNI.
+
+You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/).
+
+To install Nginx ingress set the variable *install_nginx_ingress* to yes (default no).
+
+### Nginx ingress controller
+
+You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) To enable the Nginx deployment set `install_nginx_ingress` variable to `true`.
+
+The installation is the [bare metal](https://kubernetes.github.io/ingress-nginx/deploy/#bare-metal-clusters) installation, the ingress controller then is exposed via a NodePort Service.
+
+```yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+spec:
+  ports:
+  - appProtocol: http
+    name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+    nodePort: ${extlb_listener_http_port}
+  - appProtocol: https
+    name: https
+    port: 443
+    protocol: TCP
+    targetPort: https
+    nodePort: ${extlb_listener_https_port}
+  selector:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+  type: NodePort
+```
+
+To get the real ip address of the clients using a public L4 load balancer we need to use the proxy protocol feature of nginx ingress controller:
+
+```yaml
+---
+apiVersion: v1
+data:
+  allow-snippet-annotations: "true"
+  enable-real-ip: "true"
+  proxy-real-ip-cidr: "0.0.0.0/0"
+  proxy-body-size: "20m"
+  use-proxy-protocol: "true"
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/instance: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+    app.kubernetes.io/version: ${nginx_ingress_release}
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+```
+
+**NOTE** to use nginx ingress controller with the proxy protocol enabled, an external nginx instance is used as proxy (since OCI LB doesn't support proxy protocol at the moment). Nginx will be installed on each worker node and the configuation of nginx will:
+
+* listen in proxy protocol mode
+* forward the traffic from port `80` to `extlb_http_port` (default to `30080`) on any server of the cluster
+* forward the traffic from port `443` to `extlb_https_port` (default to `30443`) on any server of the cluster
+
+This is the final result:
+
+Client -> Public L4 LB (with proxy protocol enabled) -> nginx ingress (with proxy protocol enabled) -> k8s service -> pod(s)
+
+### Cert-manager
+
+[cert-manager](https://cert-manager.io/docs/) is used to issue certificates from a variety of supported source. To use cert-manager take a look at [nginx-ingress-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-ingress-cert-manager.yml) and [nginx-configmap-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-configmap-cert-manager.yml) example. To use cert-manager and get the certificate you **need** set on your DNS configuration the public ip address of the load balancer.
 
 ## Deploy
 
@@ -318,37 +324,33 @@ terraform plan
 
 ...
 ...
-      + name                   = "k8s-sg"
-      + name_prefix            = (known after apply)
-      + owner_id               = (known after apply)
-      + revoke_rules_on_delete = false
-      + tags                   = {
-          + "Name"        = "sg-k8s-cluster-staging"
-          + "environment" = "staging"
-          + "provisioner" = "terraform"
-          + "scope"       = "k8s-cluster"
-          + "uuid"        = "xxxxx-xxxxx-xxxx-xxxxxx-xxxxxx"
-        }
-      + tags_all               = {
-          + "Name"        = "sg-k8s-cluster-staging"
-          + "environment" = "staging"
-          + "provisioner" = "terraform"
-          + "scope"       = "k8s-cluster"
-          + "uuid"        = "xxxxx-xxxxx-xxxx-xxxxxx-xxxxxx"
-        }
-      + vpc_id                 = "vpc-xxxxxx"
-    }
-
-Plan: 25 to add, 0 to change, 0 to destroy.
+Plan: 73 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
-  + k8s_dns_name            = (known after apply)
-  + k8s_server_private_ips  = [
+  + k8s_dns_name            = [
       + (known after apply),
     ]
-  + k8s_workers_private_ips = [
+  ~ k8s_server_private_ips  = [
+      - [],
       + (known after apply),
     ]
+  ~ k8s_workers_private_ips = [
+      - [],
+      + (known after apply),
+    ]
+  + private_subnets_ids     = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + public_subnets_ids      = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + vpc_id                  = (known after apply)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Note: You didn't use the -out option to save this plan, so Terraform can't guarantee to take exactly these actions if you run "terraform apply" now.
 ```
@@ -360,26 +362,31 @@ terraform apply
 
 ...
 
-      + tags_all               = {
-          + "Name"        = "sg-k8s-cluster-staging"
-          + "environment" = "staging"
-          + "provisioner" = "terraform"
-          + "scope"       = "k8s-cluster"
-          + "uuid"        = "xxxxx-xxxxx-xxxx-xxxxxx-xxxxxx"
-        }
-      + vpc_id                 = "vpc-xxxxxxxx"
-    }
-
-Plan: 25 to add, 0 to change, 0 to destroy.
+Plan: 73 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
-  + k8s_dns_name            = (known after apply)
-  + k8s_server_private_ips  = [
+  + k8s_dns_name            = [
       + (known after apply),
     ]
-  + k8s_workers_private_ips = [
+  ~ k8s_server_private_ips  = [
+      - [],
       + (known after apply),
     ]
+  ~ k8s_workers_private_ips = [
+      - [],
+      + (known after apply),
+    ]
+  + private_subnets_ids     = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + public_subnets_ids      = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + vpc_id                  = (known after apply)
 
 Do you want to perform these actions?
   Terraform will perform the actions described above.
@@ -390,7 +397,7 @@ Do you want to perform these actions?
 ...
 ...
 
-Apply complete! Resources: 25 added, 0 changed, 0 destroyed.
+Apply complete! Resources: 73 added, 0 changed, 0 destroyed.
 
 Outputs:
 
@@ -409,30 +416,21 @@ k8s_workers_private_ips = [
     "172.x.x.x",
   ]),
 ]
+private_subnets_ids = [
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+]
+public_subnets_ids = [
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+]
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
 ```
-Now on one master node you can check the status of the cluster with:
+Now on one master node (connect via AWS SSM) you can check the status of the cluster with:
 
 ```
-ssh -j bastion@<BASTION_IP> ubuntu@172.x.x.x
-
-Welcome to Ubuntu 20.04.4 LTS (GNU/Linux 5.13.0-1021-aws x86_64)
-
- * Documentation:  https://help.ubuntu.com
- * Management:     https://landscape.canonical.com
- * Support:        https://ubuntu.com/advantage
-
-  System information as of Wed Apr 13 12:41:52 UTC 2022
-
-  System load:  0.52               Processes:             157
-  Usage of /:   17.8% of 19.32GB   Users logged in:       0
-  Memory usage: 11%                IPv4 address for cni0: 10.244.0.1
-  Swap usage:   0%                 IPv4 address for ens3: 172.68.4.237
-
-
-0 updates can be applied immediately.
-
-
-Last login: Wed Apr 13 12:40:32 2022 from 172.68.0.6
 ubuntu@i-04d089ed896cfafe1:~$ sudo su -
 
 root@i-04d089ed896cfafe1:~# kubectl get nodes
@@ -446,73 +444,62 @@ i-0cb1e2e7784768b22   Ready    <none>                 3m57s   v1.23.5
 
 root@i-04d089ed896cfafe1:~# kubectl get ns
 NAME              STATUS   AGE
-default           Active   5m18s
-ingress-nginx     Active   111s # <- ingress controller ns
-kube-node-lease   Active   5m19s
-kube-public       Active   5m19s
-kube-system       Active   5m19s
-longhorn-system   Active   109s  # <- longhorn ns
+cert-manager      Active   85s
+default           Active   4m55s
+ingress-nginx     Active   87s # <- ingress controller ns
+kube-flannel      Active   4m32s
+kube-node-lease   Active   4m55s
+kube-public       Active   4m56s
+kube-system       Active   4m56s
 
 root@i-04d089ed896cfafe1:~# kubectl get pods --all-namespaces
-NAMESPACE         NAME                                          READY   STATUS      RESTARTS        AGE
-ingress-nginx     ingress-nginx-admission-create-v2fpx          0/1     Completed   0               2m33s
-ingress-nginx     ingress-nginx-admission-patch-54d9f           0/1     Completed   0               2m33s
-ingress-nginx     ingress-nginx-controller-7fc8d55869-cxv87     1/1     Running     0               2m33s
-kube-system       coredns-64897985d-8cg8g                       1/1     Running     0               5m46s
-kube-system       coredns-64897985d-9v2r8                       1/1     Running     0               5m46s
-kube-system       etcd-i-0033b408f7a1d55f3                      1/1     Running     0               4m33s
-kube-system       etcd-i-04d089ed896cfafe1                      1/1     Running     0               5m42s
-kube-system       etcd-i-09b23242f40eabcca                      1/1     Running     0               5m
-kube-system       kube-apiserver-i-0033b408f7a1d55f3            1/1     Running     1 (4m30s ago)   4m30s
-kube-system       kube-apiserver-i-04d089ed896cfafe1            1/1     Running     0               5m46s
-kube-system       kube-apiserver-i-09b23242f40eabcca            1/1     Running     0               5m1s
-kube-system       kube-controller-manager-i-0033b408f7a1d55f3   1/1     Running     0               4m36s
-kube-system       kube-controller-manager-i-04d089ed896cfafe1   1/1     Running     1 (4m50s ago)   5m49s
-kube-system       kube-controller-manager-i-09b23242f40eabcca   1/1     Running     0               5m1s
-kube-system       kube-flannel-ds-7c65s                         1/1     Running     0               5m2s
-kube-system       kube-flannel-ds-bb842                         1/1     Running     0               4m10s
-kube-system       kube-flannel-ds-q27gs                         1/1     Running     0               5m21s
-kube-system       kube-flannel-ds-sww7p                         1/1     Running     0               5m3s
-kube-system       kube-flannel-ds-z8h5p                         1/1     Running     0               5m38s
-kube-system       kube-flannel-ds-zrwdq                         1/1     Running     0               5m22s
-kube-system       kube-proxy-6rbks                              1/1     Running     0               5m2s
-kube-system       kube-proxy-9npgg                              1/1     Running     0               5m21s
-kube-system       kube-proxy-px6br                              1/1     Running     0               5m3s
-kube-system       kube-proxy-q9889                              1/1     Running     0               4m10s
-kube-system       kube-proxy-s5qnv                              1/1     Running     0               5m22s
-kube-system       kube-proxy-tng4x                              1/1     Running     0               5m46s
-kube-system       kube-scheduler-i-0033b408f7a1d55f3            1/1     Running     0               4m27s
-kube-system       kube-scheduler-i-04d089ed896cfafe1            1/1     Running     1 (4m50s ago)   5m58s
-kube-system       kube-scheduler-i-09b23242f40eabcca            1/1     Running     0               5m1s
-longhorn-system   csi-attacher-6454556647-767p2                 1/1     Running     0               115s
-longhorn-system   csi-attacher-6454556647-hz8lj                 1/1     Running     0               115s
-longhorn-system   csi-attacher-6454556647-z5ftg                 1/1     Running     0               115s
-longhorn-system   csi-provisioner-869bdc4b79-2v4wx              1/1     Running     0               115s
-longhorn-system   csi-provisioner-869bdc4b79-4xcv4              1/1     Running     0               114s
-longhorn-system   csi-provisioner-869bdc4b79-9q95d              1/1     Running     0               114s
-longhorn-system   csi-resizer-6d8cf5f99f-dwdrq                  1/1     Running     0               114s
-longhorn-system   csi-resizer-6d8cf5f99f-klvcr                  1/1     Running     0               114s
-longhorn-system   csi-resizer-6d8cf5f99f-ptpzb                  1/1     Running     0               114s
-longhorn-system   csi-snapshotter-588457fcdf-dlkdq              1/1     Running     0               113s
-longhorn-system   csi-snapshotter-588457fcdf-p2c7c              1/1     Running     0               113s
-longhorn-system   csi-snapshotter-588457fcdf-p5smn              1/1     Running     0               113s
-longhorn-system   engine-image-ei-fa2dfbf0-bkwhx                1/1     Running     0               2m7s
-longhorn-system   engine-image-ei-fa2dfbf0-cqq9n                1/1     Running     0               2m8s
-longhorn-system   engine-image-ei-fa2dfbf0-lhjjc                1/1     Running     0               2m7s
-longhorn-system   instance-manager-e-542b1382                   1/1     Running     0               119s
-longhorn-system   instance-manager-e-a5e124bb                   1/1     Running     0               2m4s
-longhorn-system   instance-manager-e-acb2a517                   1/1     Running     0               2m7s
-longhorn-system   instance-manager-r-11ab6af6                   1/1     Running     0               119s
-longhorn-system   instance-manager-r-5b82fba2                   1/1     Running     0               2m4s
-longhorn-system   instance-manager-r-c2561fa0                   1/1     Running     0               2m6s
-longhorn-system   longhorn-csi-plugin-4br28                     2/2     Running     0               113s
-longhorn-system   longhorn-csi-plugin-8gdxf                     2/2     Running     0               113s
-longhorn-system   longhorn-csi-plugin-wc6tt                     2/2     Running     0               113s
-longhorn-system   longhorn-driver-deployer-7dddcdd5bb-zjh4k     1/1     Running     0               2m31s
-longhorn-system   longhorn-manager-cbsh7                        1/1     Running     0               2m31s
-longhorn-system   longhorn-manager-d2t75                        1/1     Running     1 (2m9s ago)    2m31s
-longhorn-system   longhorn-manager-xqlfv                        1/1     Running     1 (2m9s ago)    2m31s
-longhorn-system   longhorn-ui-7648d6cd69-tc6b9                  1/1     Running     0               2m31s
+NAMESPACE       NAME                                          READY   STATUS      RESTARTS        AGE
+cert-manager    cert-manager-66d9545484-h4d9h                 1/1     Running     0               47s
+cert-manager    cert-manager-cainjector-7d8b6bd6fb-zl7sg      1/1     Running     0               47s
+cert-manager    cert-manager-webhook-669b96dcfd-b5pgk         1/1     Running     0               47s
+ingress-nginx   ingress-nginx-admission-create-g62rk          0/1     Completed   0               50s
+ingress-nginx   ingress-nginx-admission-patch-n9tc5           0/1     Completed   0               50s
+ingress-nginx   ingress-nginx-controller-5c778bffff-bmk2c     1/1     Running     0               50s
+kube-flannel    kube-flannel-ds-5fvx9                         1/1     Running     0               3m45s
+kube-flannel    kube-flannel-ds-bvqkc                         1/1     Running     1 (3m13s ago)   3m35s
+kube-flannel    kube-flannel-ds-hgxtn                         1/1     Running     1 (111s ago)    2m40s
+kube-flannel    kube-flannel-ds-kp6tl                         1/1     Running     0               3m27s
+kube-flannel    kube-flannel-ds-nvbbg                         1/1     Running     0               3m55s
+kube-flannel    kube-flannel-ds-rhsqq                         1/1     Running     0               2m42s
+kube-system     aws-node-termination-handler-478lj            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-5bk96            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-bkzrf            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-cx5ps            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-dfr44            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-vcq7z            1/1     Running     0               26s
+kube-system     coredns-5d78c9869d-n7jcq                      1/1     Running     0               4m1s
+kube-system     coredns-5d78c9869d-w9k5j                      1/1     Running     0               4m1s
+kube-system     efs-csi-controller-74695cd876-66bw5           3/3     Running     0               28s
+kube-system     efs-csi-controller-74695cd876-hl9g7           3/3     Running     0               28s
+kube-system     efs-csi-node-7wgff                            3/3     Running     0               27s
+kube-system     efs-csi-node-9v4nv                            3/3     Running     0               27s
+kube-system     efs-csi-node-mjz2r                            3/3     Running     0               27s
+kube-system     efs-csi-node-n4npv                            3/3     Running     0               27s
+kube-system     efs-csi-node-pmpnc                            3/3     Running     0               27s
+kube-system     efs-csi-node-s4prq                            3/3     Running     0               27s
+kube-system     etcd-i-012c258d537d5ec2f                      1/1     Running     0               4m4s
+kube-system     etcd-i-018fb1214f9fe07fe                      1/1     Running     0               3m7s
+kube-system     etcd-i-0f73570d6dddb6d0b                      1/1     Running     0               3m27s
+kube-system     kube-apiserver-i-012c258d537d5ec2f            1/1     Running     0               4m6s
+kube-system     kube-apiserver-i-018fb1214f9fe07fe            1/1     Running     1 (3m4s ago)    3m4s
+kube-system     kube-apiserver-i-0f73570d6dddb6d0b            1/1     Running     0               3m26s
+kube-system     kube-controller-manager-i-012c258d537d5ec2f   1/1     Running     1 (3m15s ago)   4m7s
+kube-system     kube-controller-manager-i-018fb1214f9fe07fe   1/1     Running     0               2m9s
+kube-system     kube-controller-manager-i-0f73570d6dddb6d0b   1/1     Running     0               3m26s
+kube-system     kube-proxy-4lwgv                              1/1     Running     0               2m40s
+kube-system     kube-proxy-9hgtr                              1/1     Running     0               3m27s
+kube-system     kube-proxy-d6zzp                              1/1     Running     0               4m1s
+kube-system     kube-proxy-jwb8x                              1/1     Running     0               3m35s
+kube-system     kube-proxy-q2ctc                              1/1     Running     0               2m42s
+kube-system     kube-proxy-sgn7r                              1/1     Running     0               3m45s
+kube-system     kube-scheduler-i-012c258d537d5ec2f            1/1     Running     1 (3m12s ago)   4m6s
+kube-system     kube-scheduler-i-018fb1214f9fe07fe            1/1     Running     0               3m1s
+kube-system     kube-scheduler-i-0f73570d6dddb6d0b            1/1     Running     0               3m26s
 ```
 
 #### Public LB check
@@ -576,81 +563,10 @@ curl -k -v https://k8s-ext-<REDACTED>.elb.amazonaws.com/
 
 ## Deploy a sample stack
 
-We use the same stack used in [this](https://github.com/garutilorenzo/k3s-oci-cluster) repository.
-This stack **need** longhorn and nginx ingress.
-
-To test all the components of the cluster we can deploy a sample stack. The stack is composed by the following components:
-
-* MariaDB
-* Nginx
-* Wordpress
-
-Each component is made by: one deployment and one service.
-Wordpress and nginx share the same persistent volume (ReadWriteMany with longhorn storage class). The nginx configuration is stored in four ConfigMaps and  the nginx service is exposed by the nginx ingress controller.
-
-Deploy the resources with:
-
-```
-kubectl apply -f https://raw.githubusercontent.com/garutilorenzo/k3s-oci-cluster/master/deployments/mariadb/all-resources.yml
-kubectl apply -f https://raw.githubusercontent.com/garutilorenzo/k3s-oci-cluster/master/deployments/nginx/all-resources.yml
-kubectl apply -f https://raw.githubusercontent.com/garutilorenzo/k3s-oci-cluster/master/deployments/wordpress/all-resources.yml
-```
-
-**NOTE** to install WP and reach the *wp-admin* path you have to edit the nginx deployment and change this line:
-
-```yaml
- env:
-  - name: SECURE_SUBNET
-    value: 8.8.8.8/32 # change-me
-```
-
-and set your public ip address.
-
-To check the status:
-
-```
-root@i-04d089ed896cfafe1:~# kubectl get pods -o wide
-NAME                         READY   STATUS    RESTARTS   AGE     IP            NODE                  NOMINATED NODE   READINESS GATES
-mariadb-6cbf998bd6-s98nh     1/1     Running   0          2m21s   10.244.2.13   i-072bf7de2e94e6f2d   <none>           <none>
-nginx-68b4dfbcb6-s6zfh       1/1     Running   0          19s     10.244.1.12   i-0121c2149821379cc   <none>           <none>
-wordpress-558948b576-jgvm2   1/1     Running   0          71s     10.244.3.14   i-0cb1e2e7784768b22   <none>           <none>
-
-root@i-04d089ed896cfafe1:~# kubectl get deployments
-NAME        READY   UP-TO-DATE   AVAILABLE   AGE
-mariadb     1/1     1            1           2m32s
-nginx       1/1     1            1           30s
-wordpress   1/1     1            1           82s
-
-root@i-04d089ed896cfafe1:~# kubectl get svc
-NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
-kubernetes      ClusterIP   10.96.0.1       <none>        443/TCP    14m
-mariadb-svc     ClusterIP   10.108.78.60    <none>        3306/TCP   2m43s
-nginx-svc       ClusterIP   10.103.145.57   <none>        80/TCP     41s
-wordpress-svc   ClusterIP   10.103.49.246   <none>        9000/TCP   93s
-```
-
-Now you are ready to setup WP, open the LB public ip and follow the wizard. **NOTE** nginx and the Kubernetes Ingress rule are configured without virthual host/server name.
-
-![k8s wp install](https://garutilorenzo.github.io/images/k8s-wp.png?)
-
-To clean the deployed resources:
-
-```
-kubectl delete -f https://raw.githubusercontent.com/garutilorenzo/k3s-oci-cluster/master/deployments/mariadb/all-resources.yml
-kubectl delete -f https://raw.githubusercontent.com/garutilorenzo/k3s-oci-cluster/master/deployments/nginx/all-resources.yml
-kubectl delete -f https://raw.githubusercontent.com/garutilorenzo/k3s-oci-cluster/master/deployments/wordpress/all-resources.yml
-```
+[Deploy ECK](deployments/) on Kubernetes
 
 ## Clean up
-
-Before destroy all the infrastructure **DELETE** all the object in the S3 bucket.
 
 ```
 terraform destroy
 ```
-
-## TODO
-
-* Extend the IAM role for the cluster autoscaler
-* Install the node termination handler for the EC2 spot instances
-* Auto update the certificate/token on the S3 bucket, at the moment the certificate i generated only once.
