@@ -73,7 +73,7 @@ variable "instance_types" {
 
 variable "k8s_version" {
   type    = string
-  default = "1.25.6"
+  default = "1.27.3"
 }
 
 variable "k8s_pod_subnet" {
@@ -147,17 +147,17 @@ variable "install_nginx_ingress" {
 
 variable "nginx_ingress_release" {
   type    = string
-  default = "v1.5.1"
+  default = "v1.8.1"
 }
 
 variable "install_certmanager" {
   type    = bool
-  default = true
+  default = false
 }
 
 variable "certmanager_release" {
   type    = string
-  default = "v1.11.0"
+  default = "v1.12.2"
 }
 
 variable "certmanager_email_address" {
@@ -178,7 +178,7 @@ variable "efs_persistent_storage" {
 
 variable "efs_csi_driver_release" {
   type    = string
-  default = "v1.4.2"
+  default = "v1.5.8"
 }
 
 variable "extlb_listener_http_port" {
@@ -218,5 +218,5 @@ variable "install_node_termination_handler" {
 
 variable "node_termination_handler_release" {
   type    = string
-  default = "v1.17.3"
+  default = "v1.20.0"
 }
