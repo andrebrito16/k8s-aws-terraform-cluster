@@ -45,9 +45,8 @@ You need also:
 
 * one VPC with private and public subnets
 * one ssh key already uploaded on your AWS account
-* one bastion host to reach all the private EC2 instances
 
-For VPC and bastion host you can refer to [this](https://github.com/garutilorenzo/aws-terraform-examples) repository.
+For VPC you can refer to [this](https://github.com/garutilorenzo/aws-terraform-examples) repository.
 
 ## Before you start
 
@@ -91,13 +90,11 @@ variable "AWS_REGION" {
 
 module "k8s-cluster" {
   ssk_key_pair_name      = "<SSH_KEY_NAME>"
-  uuid                   = "<GENERATE_UUID>"
   environment            = var.environment
   vpc_id                 = "<VPC_ID>"
   vpc_private_subnets    = "<PRIVATE_SUBNET_LIST>"
   vpc_public_subnets     = "<PUBLIC_SUBNET_LIST>"
   vpc_subnet_cidr        = "<SUBNET_CIDR>"
-  PATH_TO_PUBLIC_LB_KEY  = "<PAHT_TO_PRIVATE_LB_CERT>"
   install_nginx_ingress  = true
   source                 = "github.com/garutilorenzo/k8s-aws-terraform-cluster"
 }
@@ -186,13 +183,13 @@ Once you have created the `terraform.tfvars` file edit the `main.tf` file (alway
 | ------- | ------- | ----------- |
 | `region`       | `yes`       | set the correct OCI region based on your needs  |
 | `environment`  | `yes`  | Current work environment (Example: staging/dev/prod). This value is used for tag all the deployed resources |
-| `common_prefix`  | `no`  | Prefix used in all resource names/tags. Default: k8s |
 | `ssk_key_pair_name`  | `yes`  | Name of the ssh key to use |
 | `my_public_ip_cidr` | `yes`        |  your public ip in cidr format (Example: 195.102.xxx.xxx/32) |
 | `vpc_id`  | `yes`  |  ID of the VPC to use. You can find your vpc_id in your AWS console (Example: vpc-xxxxx) |
 | `vpc_private_subnets`  | `yes`  |  List of private subnets to use. This subnets are used for the public LB You can find the list of your vpc subnets in your AWS console (Example: subnet-xxxxxx) |
 | `vpc_public_subnets`   | `yes`  |  List of public subnets to use. This subnets are used for the EC2 instances and the private LB. You can find the list of your vpc subnets in your AWS console (Example: subnet-xxxxxx) |
 | `vpc_subnet_cidr`  | `yes`  |  Your subnet CIDR. You can find the VPC subnet CIDR in your AWS console (Example: 172.31.0.0/16) |
+| `common_prefix`  | `no`  | Prefix used in all resource names/tags. Default: k8s |
 | `ec2_associate_public_ip_address`  | `no`  |  Assign or not a pulic ip to the EC2 instances. Default: false |
 | `instance_profile_name`  | `no`  | Instance profile name. Default: K8sInstanceProfile |
 | `ami`  | `no`  | Ami image name. Default: ami-0a2616929f1e63d91, ubuntu 20.04 |
@@ -246,7 +243,7 @@ To install Nginx ingress set the variable *install_nginx_ingress* to yes (defaul
 
 ### Nginx ingress controller
 
-You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) To enable the longhorn deployment set `install_nginx_ingress` variable to `true`.
+You can optionally install [Nginx ingress controller](https://kubernetes.github.io/ingress-nginx/) To enable the Nginx deployment set `install_nginx_ingress` variable to `true`.
 
 The installation is the [bare metal](https://kubernetes.github.io/ingress-nginx/deploy/#bare-metal-clusters) installation, the ingress controller then is exposed via a NodePort Service.
 
@@ -255,23 +252,27 @@ The installation is the [bare metal](https://kubernetes.github.io/ingress-nginx/
 apiVersion: v1
 kind: Service
 metadata:
-  name: ingress-nginx-controller-loadbalancer
+  name: ingress-nginx-controller
   namespace: ingress-nginx
 spec:
+  ports:
+  - appProtocol: http
+    name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+    nodePort: ${extlb_listener_http_port}
+  - appProtocol: https
+    name: https
+    port: 443
+    protocol: TCP
+    targetPort: https
+    nodePort: ${extlb_listener_https_port}
   selector:
     app.kubernetes.io/component: controller
     app.kubernetes.io/instance: ingress-nginx
     app.kubernetes.io/name: ingress-nginx
-  ports:
-    - name: http
-      port: 80
-      protocol: TCP
-      targetPort: 80
-    - name: https
-      port: 443
-      protocol: TCP
-      targetPort: 443
-  type: LoadBalancer
+  type: NodePort
 ```
 
 To get the real ip address of the clients using a public L4 load balancer we need to use the proxy protocol feature of nginx ingress controller:
@@ -320,37 +321,33 @@ terraform plan
 
 ...
 ...
-      + name                   = "k8s_sg"
-      + name_prefix            = (known after apply)
-      + owner_id               = (known after apply)
-      + revoke_rules_on_delete = false
-      + tags                   = {
-          + "Name"        = "sg-k8s-cluster-staging"
-          + "environment" = "staging"
-          + "provisioner" = "terraform"
-          + "scope"       = "k8s-cluster"
-          + "uuid"        = "xxxxx-xxxxx-xxxx-xxxxxx-xxxxxx"
-        }
-      + tags_all               = {
-          + "Name"        = "sg-k8s-cluster-staging"
-          + "environment" = "staging"
-          + "provisioner" = "terraform"
-          + "scope"       = "k8s-cluster"
-          + "uuid"        = "xxxxx-xxxxx-xxxx-xxxxxx-xxxxxx"
-        }
-      + vpc_id                 = "vpc-xxxxxx"
-    }
-
-Plan: 25 to add, 0 to change, 0 to destroy.
+Plan: 73 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
-  + k8s_dns_name            = (known after apply)
-  + k8s_server_private_ips  = [
+  + k8s_dns_name            = [
       + (known after apply),
     ]
-  + k8s_workers_private_ips = [
+  ~ k8s_server_private_ips  = [
+      - [],
       + (known after apply),
     ]
+  ~ k8s_workers_private_ips = [
+      - [],
+      + (known after apply),
+    ]
+  + private_subnets_ids     = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + public_subnets_ids      = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + vpc_id                  = (known after apply)
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Note: You didn't use the -out option to save this plan, so Terraform can't guarantee to take exactly these actions if you run "terraform apply" now.
 ```
@@ -362,26 +359,31 @@ terraform apply
 
 ...
 
-      + tags_all               = {
-          + "Name"        = "sg-k8s-cluster-staging"
-          + "environment" = "staging"
-          + "provisioner" = "terraform"
-          + "scope"       = "k8s-cluster"
-          + "uuid"        = "xxxxx-xxxxx-xxxx-xxxxxx-xxxxxx"
-        }
-      + vpc_id                 = "vpc-xxxxxxxx"
-    }
-
-Plan: 25 to add, 0 to change, 0 to destroy.
+Plan: 73 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
-  + k8s_dns_name            = (known after apply)
-  + k8s_server_private_ips  = [
+  + k8s_dns_name            = [
       + (known after apply),
     ]
-  + k8s_workers_private_ips = [
+  ~ k8s_server_private_ips  = [
+      - [],
       + (known after apply),
     ]
+  ~ k8s_workers_private_ips = [
+      - [],
+      + (known after apply),
+    ]
+  + private_subnets_ids     = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + public_subnets_ids      = [
+      + (known after apply),
+      + (known after apply),
+      + (known after apply),
+    ]
+  + vpc_id                  = (known after apply)
 
 Do you want to perform these actions?
   Terraform will perform the actions described above.
@@ -392,7 +394,7 @@ Do you want to perform these actions?
 ...
 ...
 
-Apply complete! Resources: 25 added, 0 changed, 0 destroyed.
+Apply complete! Resources: 73 added, 0 changed, 0 destroyed.
 
 Outputs:
 
@@ -411,30 +413,21 @@ k8s_workers_private_ips = [
     "172.x.x.x",
   ]),
 ]
+private_subnets_ids = [
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+]
+public_subnets_ids = [
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+  "subnet-xxxxxxxxxxxxxxxxx",
+]
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
 ```
-Now on one master node you can check the status of the cluster with:
+Now on one master node (connect via AWS SSM) you can check the status of the cluster with:
 
 ```
-ssh -j bastion@<BASTION_IP> ubuntu@172.x.x.x
-
-Welcome to Ubuntu 20.04.4 LTS (GNU/Linux 5.13.0-1021-aws x86_64)
-
- * Documentation:  https://help.ubuntu.com
- * Management:     https://landscape.canonical.com
- * Support:        https://ubuntu.com/advantage
-
-  System information as of Wed Apr 13 12:41:52 UTC 2022
-
-  System load:  0.52               Processes:             157
-  Usage of /:   17.8% of 19.32GB   Users logged in:       0
-  Memory usage: 11%                IPv4 address for cni0: 10.244.0.1
-  Swap usage:   0%                 IPv4 address for ens3: 172.68.4.237
-
-
-0 updates can be applied immediately.
-
-
-Last login: Wed Apr 13 12:40:32 2022 from 172.68.0.6
 ubuntu@i-04d089ed896cfafe1:~$ sudo su -
 
 root@i-04d089ed896cfafe1:~# kubectl get nodes
@@ -448,40 +441,62 @@ i-0cb1e2e7784768b22   Ready    <none>                 3m57s   v1.23.5
 
 root@i-04d089ed896cfafe1:~# kubectl get ns
 NAME              STATUS   AGE
-default           Active   5m18s
-ingress-nginx     Active   111s # <- ingress controller ns
-kube-node-lease   Active   5m19s
-kube-public       Active   5m19s
-kube-system       Active   5m19s
+cert-manager      Active   85s
+default           Active   4m55s
+ingress-nginx     Active   87s # <- ingress controller ns
+kube-flannel      Active   4m32s
+kube-node-lease   Active   4m55s
+kube-public       Active   4m56s
+kube-system       Active   4m56s
 
 root@i-04d089ed896cfafe1:~# kubectl get pods --all-namespaces
-NAMESPACE         NAME                                          READY   STATUS      RESTARTS        AGE
-kube-system       coredns-64897985d-8cg8g                       1/1     Running     0               5m46s
-kube-system       coredns-64897985d-9v2r8                       1/1     Running     0               5m46s
-kube-system       etcd-i-0033b408f7a1d55f3                      1/1     Running     0               4m33s
-kube-system       etcd-i-04d089ed896cfafe1                      1/1     Running     0               5m42s
-kube-system       etcd-i-09b23242f40eabcca                      1/1     Running     0               5m
-kube-system       kube-apiserver-i-0033b408f7a1d55f3            1/1     Running     1 (4m30s ago)   4m30s
-kube-system       kube-apiserver-i-04d089ed896cfafe1            1/1     Running     0               5m46s
-kube-system       kube-apiserver-i-09b23242f40eabcca            1/1     Running     0               5m1s
-kube-system       kube-controller-manager-i-0033b408f7a1d55f3   1/1     Running     0               4m36s
-kube-system       kube-controller-manager-i-04d089ed896cfafe1   1/1     Running     1 (4m50s ago)   5m49s
-kube-system       kube-controller-manager-i-09b23242f40eabcca   1/1     Running     0               5m1s
-kube-system       kube-flannel-ds-7c65s                         1/1     Running     0               5m2s
-kube-system       kube-flannel-ds-bb842                         1/1     Running     0               4m10s
-kube-system       kube-flannel-ds-q27gs                         1/1     Running     0               5m21s
-kube-system       kube-flannel-ds-sww7p                         1/1     Running     0               5m3s
-kube-system       kube-flannel-ds-z8h5p                         1/1     Running     0               5m38s
-kube-system       kube-flannel-ds-zrwdq                         1/1     Running     0               5m22s
-kube-system       kube-proxy-6rbks                              1/1     Running     0               5m2s
-kube-system       kube-proxy-9npgg                              1/1     Running     0               5m21s
-kube-system       kube-proxy-px6br                              1/1     Running     0               5m3s
-kube-system       kube-proxy-q9889                              1/1     Running     0               4m10s
-kube-system       kube-proxy-s5qnv                              1/1     Running     0               5m22s
-kube-system       kube-proxy-tng4x                              1/1     Running     0               5m46s
-kube-system       kube-scheduler-i-0033b408f7a1d55f3            1/1     Running     0               4m27s
-kube-system       kube-scheduler-i-04d089ed896cfafe1            1/1     Running     1 (4m50s ago)   5m58s
-kube-system       kube-scheduler-i-09b23242f40eabcca            1/1     Running     0               5m1s
+NAMESPACE       NAME                                          READY   STATUS      RESTARTS        AGE
+cert-manager    cert-manager-66d9545484-h4d9h                 1/1     Running     0               47s
+cert-manager    cert-manager-cainjector-7d8b6bd6fb-zl7sg      1/1     Running     0               47s
+cert-manager    cert-manager-webhook-669b96dcfd-b5pgk         1/1     Running     0               47s
+ingress-nginx   ingress-nginx-admission-create-g62rk          0/1     Completed   0               50s
+ingress-nginx   ingress-nginx-admission-patch-n9tc5           0/1     Completed   0               50s
+ingress-nginx   ingress-nginx-controller-5c778bffff-bmk2c     1/1     Running     0               50s
+kube-flannel    kube-flannel-ds-5fvx9                         1/1     Running     0               3m45s
+kube-flannel    kube-flannel-ds-bvqkc                         1/1     Running     1 (3m13s ago)   3m35s
+kube-flannel    kube-flannel-ds-hgxtn                         1/1     Running     1 (111s ago)    2m40s
+kube-flannel    kube-flannel-ds-kp6tl                         1/1     Running     0               3m27s
+kube-flannel    kube-flannel-ds-nvbbg                         1/1     Running     0               3m55s
+kube-flannel    kube-flannel-ds-rhsqq                         1/1     Running     0               2m42s
+kube-system     aws-node-termination-handler-478lj            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-5bk96            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-bkzrf            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-cx5ps            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-dfr44            1/1     Running     0               26s
+kube-system     aws-node-termination-handler-vcq7z            1/1     Running     0               26s
+kube-system     coredns-5d78c9869d-n7jcq                      1/1     Running     0               4m1s
+kube-system     coredns-5d78c9869d-w9k5j                      1/1     Running     0               4m1s
+kube-system     efs-csi-controller-74695cd876-66bw5           3/3     Running     0               28s
+kube-system     efs-csi-controller-74695cd876-hl9g7           3/3     Running     0               28s
+kube-system     efs-csi-node-7wgff                            3/3     Running     0               27s
+kube-system     efs-csi-node-9v4nv                            3/3     Running     0               27s
+kube-system     efs-csi-node-mjz2r                            3/3     Running     0               27s
+kube-system     efs-csi-node-n4npv                            3/3     Running     0               27s
+kube-system     efs-csi-node-pmpnc                            3/3     Running     0               27s
+kube-system     efs-csi-node-s4prq                            3/3     Running     0               27s
+kube-system     etcd-i-012c258d537d5ec2f                      1/1     Running     0               4m4s
+kube-system     etcd-i-018fb1214f9fe07fe                      1/1     Running     0               3m7s
+kube-system     etcd-i-0f73570d6dddb6d0b                      1/1     Running     0               3m27s
+kube-system     kube-apiserver-i-012c258d537d5ec2f            1/1     Running     0               4m6s
+kube-system     kube-apiserver-i-018fb1214f9fe07fe            1/1     Running     1 (3m4s ago)    3m4s
+kube-system     kube-apiserver-i-0f73570d6dddb6d0b            1/1     Running     0               3m26s
+kube-system     kube-controller-manager-i-012c258d537d5ec2f   1/1     Running     1 (3m15s ago)   4m7s
+kube-system     kube-controller-manager-i-018fb1214f9fe07fe   1/1     Running     0               2m9s
+kube-system     kube-controller-manager-i-0f73570d6dddb6d0b   1/1     Running     0               3m26s
+kube-system     kube-proxy-4lwgv                              1/1     Running     0               2m40s
+kube-system     kube-proxy-9hgtr                              1/1     Running     0               3m27s
+kube-system     kube-proxy-d6zzp                              1/1     Running     0               4m1s
+kube-system     kube-proxy-jwb8x                              1/1     Running     0               3m35s
+kube-system     kube-proxy-q2ctc                              1/1     Running     0               2m42s
+kube-system     kube-proxy-sgn7r                              1/1     Running     0               3m45s
+kube-system     kube-scheduler-i-012c258d537d5ec2f            1/1     Running     1 (3m12s ago)   4m6s
+kube-system     kube-scheduler-i-018fb1214f9fe07fe            1/1     Running     0               3m1s
+kube-system     kube-scheduler-i-0f73570d6dddb6d0b            1/1     Running     0               3m26s
 ```
 
 #### Public LB check
@@ -545,7 +560,7 @@ curl -k -v https://k8s-ext-<REDACTED>.elb.amazonaws.com/
 
 ## Deploy a sample stack
 
-TBD
+[Deploy ECK](deployments/) on Kubernetes
 
 ## Clean up
 
