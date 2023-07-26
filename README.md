@@ -85,18 +85,60 @@ variable "environment" {
 }
 
 variable "AWS_REGION" {
-  default = "<YOUR_REGION>"
+  default = "<CHANGE_ME>"
+}
+
+variable "my_public_ip_cidr" {
+  default = "<CHANGE_ME>"
+}
+
+variable "vpc_cidr_block" {
+  default = "<CHANGE_ME>"
+}
+
+variable "certmanager_email_address" {
+  default = "<CHANGE_ME>"
+}
+
+variable "ssk_key_pair_name" {
+  default = "<CHANGE_ME>"
+}
+
+module "private-vpc" {
+  region            = var.AWS_REGION
+  my_public_ip_cidr = var.my_public_ip_cidr
+  vpc_cidr_block    = var.vpc_cidr_block
+  environment       = var.environment
+  source            = "github.com/garutilorenzo/aws-terraform-examples/private-vpc"
+}
+
+output "private_subnets_ids" {
+  value = module.private-vpc.private_subnet_ids
+}
+
+output "public_subnets_ids" {
+  value = module.private-vpc.public_subnet_ids
+}
+
+output "vpc_id" {
+  value = module.private-vpc.vpc_id
 }
 
 module "k8s-cluster" {
-  ssk_key_pair_name      = "<SSH_KEY_NAME>"
-  environment            = var.environment
-  vpc_id                 = "<VPC_ID>"
-  vpc_private_subnets    = "<PRIVATE_SUBNET_LIST>"
-  vpc_public_subnets     = "<PUBLIC_SUBNET_LIST>"
-  vpc_subnet_cidr        = "<SUBNET_CIDR>"
-  install_nginx_ingress  = true
-  source                 = "github.com/garutilorenzo/k8s-aws-terraform-cluster"
+  ssk_key_pair_name         = var.ssk_key_pair_name
+  environment               = var.environment
+  vpc_id                    = module.private-vpc.vpc_id
+  vpc_private_subnets       = module.private-vpc.private_subnet_ids
+  vpc_public_subnets        = module.private-vpc.public_subnet_ids
+  vpc_subnet_cidr           = var.vpc_cidr_block
+  my_public_ip_cidr         = var.my_public_ip_cidr
+  create_extlb              = true
+  install_nginx_ingress     = true
+  efs_persistent_storage    = true
+  expose_kubeapi            = true
+  install_certmanager       = true
+  certmanager_email_address = var.certmanager_email_address
+  source                    = "github.com/garutilorenzo/k8s-aws-terraform-cluster"
 }
 
 output "k8s_dns_name" {
@@ -181,7 +223,7 @@ Once you have created the `terraform.tfvars` file edit the `main.tf` file (alway
 
 | Var   | Required | Desc |
 | ------- | ------- | ----------- |
-| `region`       | `yes`       | set the correct OCI region based on your needs  |
+| `region`       | `yes`       | set the correct AWS region based on your needs  |
 | `environment`  | `yes`  | Current work environment (Example: staging/dev/prod). This value is used for tag all the deployed resources |
 | `ssk_key_pair_name`  | `yes`  | Name of the ssh key to use |
 | `my_public_ip_cidr` | `yes`        |  your public ip in cidr format (Example: 195.102.xxx.xxx/32) |
@@ -301,19 +343,9 @@ metadata:
   namespace: ingress-nginx
 ```
 
-**NOTE** to use nginx ingress controller with the proxy protocol enabled, an external nginx instance is used as proxy (since OCI LB doesn't support proxy protocol at the moment). Nginx will be installed on each worker node and the configuation of nginx will:
-
-* listen in proxy protocol mode
-* forward the traffic from port `80` to `extlb_http_port` (default to `30080`) on any server of the cluster
-* forward the traffic from port `443` to `extlb_https_port` (default to `30443`) on any server of the cluster
-
-This is the final result:
-
-Client -> Public L4 LB (with proxy protocol enabled) -> nginx ingress (with proxy protocol enabled) -> k8s service -> pod(s)
-
 ### Cert-manager
 
-[cert-manager](https://cert-manager.io/docs/) is used to issue certificates from a variety of supported source. To use cert-manager take a look at [nginx-ingress-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-ingress-cert-manager.yml) and [nginx-configmap-cert-manager.yml](https://github.com/garutilorenzo/k3s-oci-cluster/blob/master/deployments/nginx/nginx-configmap-cert-manager.yml) example. To use cert-manager and get the certificate you **need** set on your DNS configuration the public ip address of the load balancer.
+[cert-manager](https://cert-manager.io/docs/) is used to issue certificates from a variety of supported source.
 
 ## Deploy
 
