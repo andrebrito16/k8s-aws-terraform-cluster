@@ -7,7 +7,7 @@ locals {
   global_tags = {
     environment      = "${var.environment}"
     provisioner      = "terraform"
-    terraform_module = "https://github.com/garutilorenzo/k8s-aws-terraform-cluster"
+    terraform_module = "https://github.com/andrebrito16/k8s-aws-terraform-cluster"
     k8s_cluster_name = "${var.cluster_name}"
     application      = "k8s"
   }
