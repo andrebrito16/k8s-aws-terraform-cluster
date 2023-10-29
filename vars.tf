@@ -51,7 +51,7 @@ variable "ec2_associate_public_ip_address" {
 
 variable "ami" {
   type    = string
-  default = "	ami-0cffefff2d52e0a23"
+  default = "ami-0cffefff2d52e0a23"
 }
 
 variable "default_instance_type" {
